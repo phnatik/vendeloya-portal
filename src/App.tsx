@@ -85,6 +85,24 @@ const formatMileage = (value: string | null): string => {
   return numeric === null ? '-' : `${numeric.toLocaleString()} mi`
 }
 
+const formatCurrency = (value: number | null): string => {
+  if (value === null) {
+    return '-'
+  }
+
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+const escapeCsvValue = (value: string | number | null): string => {
+  const normalized = value === null ? '' : String(value)
+  const escaped = normalized.replaceAll('"', '""')
+  return `"${escaped}"`
+}
+
 const hasContactInfo = (lead: Lead): boolean => {
   return Boolean(
     normalize(lead.first_name) &&
@@ -137,7 +155,9 @@ function App() {
 
   const [searchTerm, setSearchTerm] = useState('')
   const [stateFilter, setStateFilter] = useState('all')
-  const [makeFilter, setMakeFilter] = useState('all')
+  const [yearSearch, setYearSearch] = useState('')
+  const [makeSearch, setMakeSearch] = useState('')
+  const [modelSearch, setModelSearch] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [mileageMin, setMileageMin] = useState('')
@@ -229,12 +249,11 @@ function App() {
     return [...new Set(leads.map((lead) => normalize(lead.state)).filter(Boolean))]
   }, [leads])
 
-  const makes = useMemo(() => {
-    return [...new Set(leads.map((lead) => normalize(lead.make)).filter(Boolean))]
-  }, [leads])
-
   const filteredLeads = useMemo(() => {
     const query = searchTerm.trim().toLowerCase()
+    const yearQuery = yearSearch.trim().toLowerCase()
+    const makeQuery = makeSearch.trim().toLowerCase()
+    const modelQuery = modelSearch.trim().toLowerCase()
     const minMileage = mileageMin ? Number(mileageMin) : null
     const maxMileage = mileageMax ? Number(mileageMax) : null
     const fromTime = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null
@@ -262,8 +281,9 @@ function App() {
 
         const matchesState =
           stateFilter === 'all' || normalize(lead.state) === stateFilter
-        const matchesMake =
-          makeFilter === 'all' || normalize(lead.make) === makeFilter
+        const matchesYear = !yearQuery || normalize(lead.model_year).toLowerCase().includes(yearQuery)
+        const matchesMake = !makeQuery || normalize(lead.make).toLowerCase().includes(makeQuery)
+        const matchesModel = !modelQuery || normalize(lead.model).toLowerCase().includes(modelQuery)
 
         const matchesMinMileage = minMileage === null || (mileage ?? -1) >= minMileage
         const matchesMaxMileage = maxMileage === null || (mileage ?? Infinity) <= maxMileage
@@ -275,7 +295,9 @@ function App() {
         return (
           matchesQuery &&
           matchesState &&
+          matchesYear &&
           matchesMake &&
+          matchesModel &&
           matchesMinMileage &&
           matchesMaxMileage &&
           matchesFromDate &&
@@ -334,7 +356,9 @@ function App() {
     leads,
     searchTerm,
     stateFilter,
-    makeFilter,
+    yearSearch,
+    makeSearch,
+    modelSearch,
     mileageMin,
     mileageMax,
     fromDate,
@@ -345,6 +369,9 @@ function App() {
 
   const baseFilteredLeads = useMemo(() => {
     const query = searchTerm.trim().toLowerCase()
+    const yearQuery = yearSearch.trim().toLowerCase()
+    const makeQuery = makeSearch.trim().toLowerCase()
+    const modelQuery = modelSearch.trim().toLowerCase()
     const minMileage = mileageMin ? Number(mileageMin) : null
     const maxMileage = mileageMax ? Number(mileageMax) : null
 
@@ -368,20 +395,32 @@ function App() {
 
       const matchesState =
         stateFilter === 'all' || normalize(lead.state) === stateFilter
-      const matchesMake =
-        makeFilter === 'all' || normalize(lead.make) === makeFilter
+      const matchesYear = !yearQuery || normalize(lead.model_year).toLowerCase().includes(yearQuery)
+      const matchesMake = !makeQuery || normalize(lead.make).toLowerCase().includes(makeQuery)
+      const matchesModel = !modelQuery || normalize(lead.model).toLowerCase().includes(modelQuery)
       const matchesMinMileage = minMileage === null || (mileage ?? -1) >= minMileage
       const matchesMaxMileage = maxMileage === null || (mileage ?? Infinity) <= maxMileage
 
       return (
         matchesQuery &&
         matchesState &&
+        matchesYear &&
         matchesMake &&
+        matchesModel &&
         matchesMinMileage &&
         matchesMaxMileage
       )
     })
-  }, [leads, searchTerm, stateFilter, makeFilter, mileageMin, mileageMax])
+  }, [
+    leads,
+    searchTerm,
+    stateFilter,
+    yearSearch,
+    makeSearch,
+    modelSearch,
+    mileageMin,
+    mileageMax,
+  ])
 
   const periodMetrics = useMemo(() => {
     const now = new Date()
@@ -492,6 +531,71 @@ function App() {
     setPassword('')
   }
 
+  const clearFilters = () => {
+    setSearchTerm('')
+    setStateFilter('all')
+    setYearSearch('')
+    setMakeSearch('')
+    setModelSearch('')
+    setFromDate('')
+    setToDate('')
+    setMileageMin('')
+    setMileageMax('')
+  }
+
+  const downloadCsv = () => {
+    const headers = [
+      'Date',
+      'First Name',
+      'Last Name',
+      'Year',
+      'Make',
+      'Model',
+      'Mileage',
+      'State',
+      'Zip',
+      'Adjusted Whole Avg',
+      'Email',
+      'Phone',
+    ]
+
+    const rows = filteredLeads.map((lead) => {
+      return [
+        formatDate(lead.created_at),
+        normalize(lead.first_name),
+        normalize(lead.last_name),
+        normalize(lead.model_year),
+        normalize(lead.make),
+        normalize(lead.model),
+        lead.current_mileage ?? '',
+        normalize(lead.state),
+        normalize(lead.zip_code),
+        lead.adjusted_whole_avg,
+        normalize(lead.email_address),
+        normalize(lead.phone_number),
+      ]
+    })
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map((value) => escapeCsvValue(value)).join(','))
+      .join('\n')
+
+    const blob = new Blob([`\uFEFF${csvContent}`], {
+      type: 'text/csv;charset=utf-8;',
+    })
+
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const today = new Date().toISOString().slice(0, 10)
+
+    link.href = url
+    link.download = `leads-${today}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   const updateSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
@@ -561,15 +665,22 @@ function App() {
         <section className="filters-grid">
           <div className="filters-header">
             <h2>Filters</h2>
-            <button
-              type="button"
-              className="filters-toggle"
-              onClick={() => setIsMobileFiltersOpen((prev) => !prev)}
-              aria-expanded={isMobileFiltersOpen}
-              aria-controls="filters-fields"
-            >
-              {isMobileFiltersOpen ? 'Hide' : 'Show'}
-            </button>
+            <div className="filters-actions">
+              <button type="button" className="clear-filters" onClick={clearFilters}>
+                Clear filters
+              </button>
+              {isMobileViewport ? (
+                <button
+                  type="button"
+                  className="filters-toggle"
+                  onClick={() => setIsMobileFiltersOpen((prev) => !prev)}
+                  aria-expanded={isMobileFiltersOpen}
+                  aria-controls="filters-fields"
+                >
+                  {isMobileFiltersOpen ? 'Hide' : 'Show'}
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div
@@ -604,15 +715,33 @@ function App() {
             </label>
 
             <label>
+              Year
+              <input
+                type="search"
+                placeholder="ex: 2023"
+                value={yearSearch}
+                onChange={(event) => setYearSearch(event.target.value)}
+              />
+            </label>
+
+            <label>
               Make
-              <select value={makeFilter} onChange={(event) => setMakeFilter(event.target.value)}>
-                <option value="all">All makes</option>
-                {makes.map((make) => (
-                  <option key={make} value={make}>
-                    {make}
-                  </option>
-                ))}
-              </select>
+              <input
+                type="search"
+                placeholder="ex: Toyota"
+                value={makeSearch}
+                onChange={(event) => setMakeSearch(event.target.value)}
+              />
+            </label>
+
+            <label>
+              Model
+              <input
+                type="search"
+                placeholder="ex: Tacoma"
+                value={modelSearch}
+                onChange={(event) => setModelSearch(event.target.value)}
+              />
             </label>
 
             <label>
@@ -692,7 +821,12 @@ function App() {
 
           <div className="table-meta">
             <p>{filteredLeads.length.toLocaleString()} records shown</p>
-            {isLoading ? <p>Loading API data...</p> : null}
+            <div className="meta-actions">
+              {isLoading ? <p>Loading API data...</p> : null}
+              <button type="button" className="download-csv" onClick={downloadCsv}>
+                Download CSV
+              </button>
+            </div>
           </div>
 
           <div className="sort-controls">
@@ -709,15 +843,16 @@ function App() {
                 ))}
               </select>
             </label>
-            <button
-              type="button"
-              className="sort-direction"
-              onClick={() =>
+            <a
+              href="#"
+              className="sort-direction-link"
+              onClick={(event) => {
+                event.preventDefault()
                 setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-              }
+              }}
             >
               {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
-            </button>
+            </a>
           </div>
 
           {loadError ? <p className="error">{loadError}</p> : null}
@@ -742,33 +877,39 @@ function App() {
                     </button>
                   </th>
                   <th>
+                    Year
+                  </th>
+                  <th>
                     <button type="button" onClick={() => updateSort('make')}>
-                      Vehicle
+                      Make
                     </button>
                   </th>
+                  <th>Model</th>
                   <th>
                     <button type="button" onClick={() => updateSort('state')}>
                       State
                     </button>
                   </th>
+                  <th>Adj Whole Avg</th>
                   <th>Contact</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredLeads.map((lead) => {
                   const fullName = `${normalize(lead.first_name)} ${normalize(lead.last_name)}`.trim()
-                  const vehicle =
-                    `${normalize(lead.model_year)} ${normalize(lead.make)} ${normalize(lead.model)}`.trim()
 
                   return (
                     <tr key={lead.id}>
                       <td>{formatDate(lead.created_at)}</td>
                       <td>{fullName || '-'}</td>
                       <td>{formatMileage(lead.current_mileage)}</td>
-                      <td>{vehicle || '-'}</td>
+                      <td>{normalize(lead.model_year) || '-'}</td>
+                      <td>{normalize(lead.make) || '-'}</td>
+                      <td>{normalize(lead.model) || '-'}</td>
                       <td>
                         {normalize(lead.state) || '-'} {normalize(lead.zip_code) || ''}
                       </td>
+                      <td>{formatCurrency(lead.adjusted_whole_avg)}</td>
                       <td>
                         <div>{normalize(lead.email_address) || '-'}</div>
                         <div>{normalize(lead.phone_number) || '-'}</div>
@@ -779,7 +920,7 @@ function App() {
 
                 {!isLoading && filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="empty-row">
+                    <td colSpan={9} className="empty-row">
                       No leads match the current filters.
                     </td>
                   </tr>
@@ -812,6 +953,10 @@ function App() {
                       <strong>
                         {normalize(lead.state) || '-'} {normalize(lead.zip_code) || ''}
                       </strong>
+                    </div>
+                    <div>
+                      <span>Adj Whole Avg</span>
+                      <strong>{formatCurrency(lead.adjusted_whole_avg)}</strong>
                     </div>
                     <div>
                       <span>Email</span>
