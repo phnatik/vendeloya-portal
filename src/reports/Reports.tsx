@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { apiGet, query, UnauthorizedError } from '../api'
 import {
+  MISSED_LABELS,
   reasonLabel,
   REASON_LABELS,
+  type DealerArea,
   type CapUsage,
   type DeliveriesReport,
   type RoutingReport,
@@ -13,7 +15,9 @@ import {
 //   Routing      assigned vs unassigned, per dealer (leads, distance, caps, deliveries)
 //   Unassigned   the leads no dealer took — the ones someone has to act on
 //   Deliveries   exactly what was sent to a dealer, lead by lead
-// One date range (empty = this month so far) applies to all three.
+// One date range (empty = this month so far) and one dealer picker apply to all three.
+// With a dealer picked, Routing shows that dealer's area, Unassigned shows the leads in
+// its radius nobody took, and Deliveries shows what it was sent.
 
 type Tab = 'routing' | 'unassigned' | 'deliveries'
 
@@ -91,10 +95,11 @@ export default function Reports({ token, onUnauthorized }: Props) {
   const [dealer, setDealer] = useState('')
   const [includeTest, setIncludeTest] = useState(false)
 
-  // The routing report is always loaded: its dealer list also feeds the Deliveries picker.
-  const routing = useReport<RoutingReport>(`/reports/routing${query({ from, to, shadow })}`, token, onUnauthorized)
+  // Every dealer, for the picker: the network-wide report for this month, whatever is selected.
+  const dealerList = useReport<RoutingReport>('/reports/routing', token, onUnauthorized)
+  const routing = useReport<RoutingReport>(`/reports/routing${query({ from, to, shadow, dealer })}`, token, onUnauthorized)
   const unassigned = useReport<UnassignedReport>(
-    tab === 'unassigned' ? `/reports/unassigned${query({ from, to, reason })}` : null,
+    tab === 'unassigned' ? `/reports/unassigned${query({ from, to, reason, dealer })}` : null,
     token,
     onUnauthorized,
   )
@@ -105,7 +110,8 @@ export default function Reports({ token, onUnauthorized }: Props) {
   )
 
   const range = routing.data?.range
-  const dealers = routing.data?.dealers ?? []
+  const dealers = dealerList.data?.dealers ?? []
+  const dealerName = dealers.find((d) => d.slug === dealer)?.name ?? dealer
 
   return (
     <div className="page">
@@ -151,6 +157,17 @@ export default function Reports({ token, onUnauthorized }: Props) {
           >
             This month
           </button>
+          <label>
+            Dealer
+            <select value={dealer} onChange={(e) => setDealer(e.target.value)}>
+              <option value="">All dealers</option>
+              {dealers.map((d) => (
+                <option key={d.slug} value={d.slug}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
           {tab === 'routing' ? (
             <label className="check-label">
@@ -174,23 +191,10 @@ export default function Reports({ token, onUnauthorized }: Props) {
           ) : null}
 
           {tab === 'deliveries' ? (
-            <>
-              <label>
-                Dealer
-                <select value={dealer} onChange={(e) => setDealer(e.target.value)}>
-                  <option value="">All dealers</option>
-                  {dealers.map((d) => (
-                    <option key={d.slug} value={d.slug}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="check-label">
-                <input type="checkbox" checked={includeTest} onChange={(e) => setIncludeTest(e.target.checked)} />
-                Include test-inbox sends
-              </label>
-            </>
+            <label className="check-label">
+              <input type="checkbox" checked={includeTest} onChange={(e) => setIncludeTest(e.target.checked)} />
+              Include test-inbox sends
+            </label>
           ) : null}
         </div>
         {range ? (
@@ -201,7 +205,9 @@ export default function Reports({ token, onUnauthorized }: Props) {
       </section>
 
       <section className="table-section">
-        {tab === 'routing' ? <RoutingView report={routing.data} error={routing.error} loading={routing.loading} /> : null}
+        {tab === 'routing' ? (
+          <RoutingView report={routing.data} error={routing.error} loading={routing.loading} dealerName={dealerName} />
+        ) : null}
 
         {tab === 'unassigned' ? (
           <>
@@ -210,7 +216,9 @@ export default function Reports({ token, onUnauthorized }: Props) {
               <p>
                 {unassigned.loading
                   ? 'Loading…'
-                  : `${(unassigned.data?.leads.length ?? 0).toLocaleString()} unassigned lead(s) — no dealer was sent these.`}
+                  : dealer
+                    ? `${(unassigned.data?.leads.length ?? 0).toLocaleString()} lead(s) inside ${dealerName}’s radius that no dealer was sent.`
+                    : `${(unassigned.data?.leads.length ?? 0).toLocaleString()} unassigned lead(s). No dealer was sent these.`}
               </p>
               <div className="meta-actions">
                 <button
@@ -299,7 +307,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
               <p>
                 {deliveries.loading
                   ? 'Loading…'
-                  : `${(deliveries.data?.deliveries.length ?? 0).toLocaleString()} send(s)${dealer ? ` to ${dealer}` : ''}. One row per address per attempt.`}
+                  : `${(deliveries.data?.deliveries.length ?? 0).toLocaleString()} send(s)${dealer ? ` to ${dealerName}` : ''}. One row per address per attempt.`}
               </p>
               <div className="meta-actions">
                 <button
@@ -384,7 +392,17 @@ export default function Reports({ token, onUnauthorized }: Props) {
   )
 }
 
-function RoutingView({ report, error, loading }: { report: RoutingReport | null; error: string; loading: boolean }) {
+function RoutingView({
+  report,
+  error,
+  loading,
+  dealerName,
+}: {
+  report: RoutingReport | null
+  error: string
+  loading: boolean
+  dealerName: string
+}) {
   if (error) return <p className="error">{error}</p>
   if (!report) return <p className="empty-row">{loading ? 'Loading…' : 'No data.'}</p>
 
@@ -396,7 +414,7 @@ function RoutingView({ report, error, loading }: { report: RoutingReport | null;
         </p>
       ) : null}
 
-      <LeadFlow report={report} />
+      {report.area ? <AreaFlow area={report.area} name={dealerName} /> : <LeadFlow report={report} />}
 
       <div className="table-wrap">
         <table>
@@ -518,6 +536,78 @@ function LeadFlow({ report }: { report: RoutingReport }) {
           ))}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+// The same bar for one dealer: the leads inside its radius, split into what it got, what
+// another dealer got, and what nobody got, with why it missed the rest.
+function AreaFlow({ area, name }: { area: DealerArea; name: string }) {
+  const share = (n: number) => (area.total ? (n / area.total) * 100 : 0)
+  const missed = (Object.keys(MISSED_LABELS) as Array<keyof DealerArea['missed']>).filter((k) => area.missed[k] > 0)
+  const parts = [
+    { key: 'received', label: name, count: area.received, color: '#0C4A36' },
+    { key: 'other', label: 'Another dealer', count: area.other_dealer, color: '#8CC7AA' },
+  ]
+
+  return (
+    <div className="flow">
+      <p className="flow-total">
+        <span className="flow-number">{area.received.toLocaleString()}</span>
+        <span className="flow-caption">
+          {area.received === 1 ? 'lead' : 'leads'} went to {name}
+          {area.total ? `, ${pct(area.received, area.total)} of the ${area.total.toLocaleString()} in its area` : ''}
+        </span>
+      </p>
+
+      {area.total ? (
+        <div className="flow-bar" role="img" aria-label={`${area.received} to ${name}, ${area.other_dealer} to another dealer, ${area.unassigned} unassigned`}>
+          {parts.filter((p) => p.count > 0).map((p) => (
+            <span key={p.key} style={{ width: `${share(p.count)}%`, background: p.color }} title={`${p.label}: ${p.count}`} />
+          ))}
+          {area.unassigned ? (
+            <span className="flow-unassigned" style={{ width: `${share(area.unassigned)}%` }} title={`Unassigned: ${area.unassigned}`} />
+          ) : null}
+        </div>
+      ) : (
+        <p className="empty-row">No leads in this dealer’s area in this range.</p>
+      )}
+
+      {area.total ? (
+        <ul className="flow-legend">
+          {parts.map((p) => (
+            <li key={p.key}>
+              <i style={{ background: p.color }} aria-hidden="true" />
+              <span className="flow-name">{p.label}</span>
+              <span className="flow-count">
+                {p.count.toLocaleString()} ({pct(p.count, area.total)})
+              </span>
+            </li>
+          ))}
+          <li>
+            <i className="flow-unassigned" aria-hidden="true" />
+            <span className="flow-name">Unassigned</span>
+            <span className="flow-count">
+              {area.unassigned.toLocaleString()} ({pct(area.unassigned, area.total)})
+            </span>
+          </li>
+        </ul>
+      ) : null}
+
+      {missed.length ? (
+        <div className="reason-list">
+          <span className="muted">Why {name} missed {area.other_dealer + area.unassigned}:</span>
+          {missed.map((k) => (
+            <span key={k} className={`badge ${k === 'outranked' ? '' : k === 'filtered_out' ? 'reason-filtered_out' : 'reason-all_capped'}`}>
+              {MISSED_LABELS[k]} ({area.missed[k]})
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <p className="report-note">
+        “Its area” is every lead inside its radius, plus any repeat customer sent to it from outside.
+      </p>
     </div>
   )
 }

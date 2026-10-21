@@ -16,9 +16,21 @@ export type DealerRow = {
   delivery: { leads_delivered: number; sends_failed: number; sends_bounced: number } | null
 }
 
+// One dealer's territory (when a dealer is selected): leads inside its radius split by
+// who got them, and why it missed the ones it didn't get.
+export type DealerArea = {
+  total: number
+  received: number
+  other_dealer: number
+  unassigned: number
+  missed: { total_cap: number; monthly_cap: number; filtered_out: number; outranked: number }
+}
+
 export type RoutingReport = {
   range: Range
   shadow: boolean
+  dealer: string | null
+  area: DealerArea | null
   totals: { leads: number; assigned: number; unassigned: number }
   unassigned_by_reason: Array<{ reason: string; leads: number }>
   dealers: DealerRow[]
@@ -38,7 +50,7 @@ export type UnassignedLead = {
   nearest_dealer: { slug: string; distance_miles: number; radius_miles: number; why_not: string | null } | null
 }
 
-export type UnassignedReport = { range: Range; leads: UnassignedLead[] }
+export type UnassignedReport = { range: Range; dealer: string | null; leads: UnassignedLead[] }
 
 export type Delivery = {
   sent_at: string
@@ -68,3 +80,11 @@ export const REASON_LABELS: Record<string, string> = {
 }
 
 export const reasonLabel = (reason: string): string => REASON_LABELS[reason] || reason
+
+// Why a dealer missed a lead that was inside its radius.
+export const MISSED_LABELS: Record<keyof DealerArea['missed'], string> = {
+  outranked: 'A closer or less-busy dealer got it',
+  filtered_out: 'Its filters declined it',
+  total_cap: 'It was at its total cap',
+  monthly_cap: 'It was at its monthly cap',
+}
