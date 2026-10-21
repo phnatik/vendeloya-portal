@@ -48,8 +48,13 @@ const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
   { key: 'state', label: 'State' },
 ]
 
-const API_URL = 'https://api.vendeloya.ai/api/v1/user'
-const SESSION_KEY = 'portal-authenticated'
+// The backend. Override for local development with VITE_API_BASE in .env.local
+// (e.g. http://localhost:3000/api/v1).
+const API_BASE =
+  (import.meta.env.VITE_API_BASE as string | undefined) || 'https://api.vendeloya.ai/api/v1'
+// The session token from POST /auth/login, sent as a Bearer token on every request.
+// sessionStorage: it's gone when the tab closes, and the server expires it after 12h.
+const TOKEN_KEY = 'portal-token'
 const MOBILE_BREAKPOINT = 740
 
 const toNumber = (value: string | null): number | null => {
@@ -142,12 +147,12 @@ const formatDelta = (current: number, previous: number): string => {
 }
 
 function App() {
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    sessionStorage.getItem(SESSION_KEY) === 'true',
-  )
+  const [isSigningIn, setIsSigningIn] = useState(false)
+  const [token, setToken] = useState<string | null>(sessionStorage.getItem(TOKEN_KEY))
+  const isAuthenticated = Boolean(token)
 
   const [leads, setLeads] = useState<Lead[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -168,14 +173,13 @@ function App() {
   const [isMobileViewport, setIsMobileViewport] = useState(false)
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false)
 
-  const expectedUsername = import.meta.env.VITE_PORTAL_USERNAME as
-    | string
-    | undefined
-  const expectedPassword = import.meta.env.VITE_PORTAL_PASSWORD as
-    | string
-    | undefined
-
-  const canLogin = Boolean(expectedUsername && expectedPassword)
+  // Back to the sign-in screen, e.g. when the server says the token is no longer valid.
+  const signOutLocally = (message = '') => {
+    sessionStorage.removeItem(TOKEN_KEY)
+    setToken(null)
+    setPassword('')
+    setAuthError(message)
+  }
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`)
@@ -199,7 +203,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!token) {
       return
     }
 
@@ -210,7 +214,13 @@ function App() {
       setLoadError('')
 
       try {
-        const response = await fetch(API_URL)
+        const response = await fetch(`${API_BASE}/user`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (response.status === 401) {
+          if (isMounted) signOutLocally('Your session has expired. Please sign in again.')
+          return
+        }
         if (!response.ok) {
           throw new Error(`API request failed: ${response.status}`)
         }
@@ -243,7 +253,7 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [isAuthenticated])
+  }, [token])
 
   const states = useMemo(() => {
     return [...new Set(leads.map((lead) => normalize(lead.state)).filter(Boolean))]
@@ -506,29 +516,49 @@ function App() {
     }
   }, [baseFilteredLeads, leads, fromDate, toDate])
 
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+  // Signs in against the backend (POST /auth/login), which checks the password and returns
+  // a session token. Nothing secret lives in this app's code or build.
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    setIsSigningIn(true)
+    setAuthError('')
 
-    if (!canLogin) {
-      setAuthError('Missing VITE_PORTAL_USERNAME or VITE_PORTAL_PASSWORD in env.')
-      return
+    try {
+      const response = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const payload = await response.json().catch(() => ({}))
+
+      if (response.ok && payload.token) {
+        sessionStorage.setItem(TOKEN_KEY, payload.token)
+        setToken(payload.token)
+        setPassword('')
+        return
+      }
+      setAuthError(
+        response.status === 429
+          ? 'Too many attempts. Please wait a few minutes and try again.'
+          : 'Invalid email or password.',
+      )
+    } catch {
+      setAuthError('Could not reach the server. Please try again.')
+    } finally {
+      setIsSigningIn(false)
     }
-
-    if (username === expectedUsername && password === expectedPassword) {
-      setAuthError('')
-      setIsAuthenticated(true)
-      sessionStorage.setItem(SESSION_KEY, 'true')
-      return
-    }
-
-    setAuthError('Invalid username or password.')
   }
 
+  // Revokes the session on the server too, so the token is dead even if it was copied.
   const logout = () => {
-    sessionStorage.removeItem(SESSION_KEY)
-    setIsAuthenticated(false)
-    setUsername('')
-    setPassword('')
+    if (token) {
+      void fetch(`${API_BASE}/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {})
+    }
+    signOutLocally()
+    setEmail('')
   }
 
   const clearFilters = () => {
@@ -615,11 +645,11 @@ function App() {
 
           <form className="login-form" onSubmit={handleLogin}>
             <label>
-              Username
+              Email
               <input
-                type="text"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
                 autoComplete="username"
                 required
               />
@@ -637,7 +667,9 @@ function App() {
             </label>
 
             {authError ? <p className="error">{authError}</p> : null}
-            <button type="submit">Sign In</button>
+            <button type="submit" disabled={isSigningIn}>
+              {isSigningIn ? 'Signing in…' : 'Sign In'}
+            </button>
           </form>
         </section>
       </main>
