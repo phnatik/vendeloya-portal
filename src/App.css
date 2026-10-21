@@ -175,7 +175,7 @@ button:disabled {
 }
 
 .sidebar-logo {
-  height: 24px;
+  height: 34px;
   width: auto;
   align-self: flex-start;
   margin-left: 10px;
@@ -218,7 +218,6 @@ button:disabled {
 .side-link.active {
   background: var(--mint);
   color: var(--forest);
-  box-shadow: inset 3px 0 0 var(--green);
 }
 
 .side-foot {
@@ -248,7 +247,7 @@ button:disabled {
 }
 
 .page {
-  width: min(1320px, 100%);
+  width: 100%;
   padding: 32px 36px 48px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -779,7 +778,7 @@ td.at-cap {
   }
 
   .sidebar-logo {
-    height: 20px;
+    height: 26px;
     margin: 0;
   }
 
