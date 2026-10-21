@@ -108,32 +108,23 @@ export default function Reports({ token, onUnauthorized }: Props) {
   const dealers = routing.data?.dealers ?? []
 
   return (
-    <div className="portal-content">
-      <section className="filters-grid">
-        <div className="filters-header">
-          <h2>Reports</h2>
-          <div className="filters-actions">
-            <button
-              type="button"
-              className="clear-filters"
-              onClick={() => {
-                setFrom('')
-                setTo('')
-              }}
-            >
-              This month
-            </button>
-          </div>
+    <div className="page">
+      <header className="page-head">
+        <div>
+          <h1 className="page-title">Reports</h1>
+          <p className="page-desc">Where leads went, which ones no dealer took, and what each dealer was sent.</p>
         </div>
+      </header>
 
-        <div className="report-tabs" role="tablist">
+      <section className="panel toolbar">
+        <div className="segmented" role="tablist" aria-label="Report">
           {(['routing', 'unassigned', 'deliveries'] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
               role="tab"
               aria-selected={tab === t}
-              className={tab === t ? 'report-tab active' : 'report-tab'}
+              className={tab === t ? 'segment active' : 'segment'}
               onClick={() => setTab(t)}
             >
               {t === 'routing' ? 'Routing' : t === 'unassigned' ? 'Unassigned' : 'Deliveries'}
@@ -141,7 +132,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
           ))}
         </div>
 
-        <div className="filters-fields">
+        <div className="toolbar-fields">
           <label>
             From
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -150,11 +141,21 @@ export default function Reports({ token, onUnauthorized }: Props) {
             To
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </label>
+          <button
+            type="button"
+            className="btn btn-quiet"
+            onClick={() => {
+              setFrom('')
+              setTo('')
+            }}
+          >
+            This month
+          </button>
 
           {tab === 'routing' ? (
             <label className="check-label">
               <input type="checkbox" checked={shadow} onChange={(e) => setShadow(e.target.checked)} />
-              Shadow mode (what routing would have done)
+              Show shadow mode (what routing would have done)
             </label>
           ) : null}
 
@@ -194,7 +195,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
         </div>
         {range ? (
           <p className="report-range">
-            Showing {range.from} → {range.to}
+            {range.from} to {range.to}
           </p>
         ) : null}
       </section>
@@ -214,7 +215,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
               <div className="meta-actions">
                 <button
                   type="button"
-                  className="download-csv"
+                  className="btn btn-secondary"
                   disabled={!unassigned.data?.leads.length}
                   onClick={() =>
                     downloadCsv(
@@ -264,10 +265,12 @@ export default function Reports({ token, onUnauthorized }: Props) {
                         {l.nearest_dealer ? (
                           <>
                             <div>
-                              {l.nearest_dealer.slug} · {l.nearest_dealer.distance_miles} mi
+                              {l.nearest_dealer.slug}, {l.nearest_dealer.distance_miles} mi away
                             </div>
                             <div className="muted">
-                              radius {l.nearest_dealer.radius_miles} mi{l.nearest_dealer.why_not ? ` · ${l.nearest_dealer.why_not}` : ''}
+                              {l.nearest_dealer.why_not
+                                ? `${l.nearest_dealer.why_not[0].toUpperCase()}${l.nearest_dealer.why_not.slice(1)}`
+                                : `Radius ${l.nearest_dealer.radius_miles} mi`}
                             </div>
                           </>
                         ) : (
@@ -301,7 +304,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
               <div className="meta-actions">
                 <button
                   type="button"
-                  className="download-csv"
+                  className="btn btn-secondary"
                   disabled={!deliveries.data?.deliveries.length}
                   onClick={() =>
                     downloadCsv(
@@ -325,8 +328,8 @@ export default function Reports({ token, onUnauthorized }: Props) {
                     <th>Sent</th>
                     <th>Lead</th>
                     <th>Dealer</th>
-                    <th>Customer · vehicle</th>
-                    <th>ZIP · miles</th>
+                    <th>Customer</th>
+                    <th>ZIP</th>
                     <th>Sent to</th>
                     <th>Outcome</th>
                   </tr>
@@ -342,8 +345,8 @@ export default function Reports({ token, onUnauthorized }: Props) {
                         <div className="muted">{d.vehicle || '—'}</div>
                       </td>
                       <td>
-                        {d.zip || '—'}
-                        {d.distance_miles != null ? ` · ${d.distance_miles} mi` : ''}
+                        <div>{d.zip || '—'}</div>
+                        {d.distance_miles != null ? <div className="muted">{d.distance_miles} mi</div> : null}
                       </td>
                       <td>
                         <div>{d.recipient}</div>
@@ -384,7 +387,6 @@ export default function Reports({ token, onUnauthorized }: Props) {
 function RoutingView({ report, error, loading }: { report: RoutingReport | null; error: string; loading: boolean }) {
   if (error) return <p className="error">{error}</p>
   if (!report) return <p className="empty-row">{loading ? 'Loading…' : 'No data.'}</p>
-  const t = report.totals
 
   return (
     <>
@@ -394,33 +396,7 @@ function RoutingView({ report, error, loading }: { report: RoutingReport | null;
         </p>
       ) : null}
 
-      <div className="kpi-grid">
-        <article className="kpi-card">
-          <p className="kpi-label">Leads</p>
-          <p className="kpi-value">{t.leads.toLocaleString()}</p>
-          <p className="kpi-delta">Completed funnel, in range</p>
-        </article>
-        <article className="kpi-card">
-          <p className="kpi-label">Assigned to a dealer</p>
-          <p className="kpi-value">{t.assigned.toLocaleString()}</p>
-          <p className="kpi-delta">{pct(t.assigned, t.leads)} of leads</p>
-        </article>
-        <article className="kpi-card">
-          <p className="kpi-label">Unassigned</p>
-          <p className="kpi-value">{t.unassigned.toLocaleString()}</p>
-          <p className="kpi-delta">{pct(t.unassigned, t.leads)} of leads — see the Unassigned tab</p>
-        </article>
-      </div>
-
-      {report.unassigned_by_reason.length ? (
-        <div className="reason-list">
-          {report.unassigned_by_reason.map((r) => (
-            <span key={r.reason} className={`badge reason-${r.reason}`}>
-              {reasonLabel(r.reason)}: {r.leads}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <LeadFlow report={report} />
 
       <div className="table-wrap">
         <table>
@@ -428,13 +404,13 @@ function RoutingView({ report, error, loading }: { report: RoutingReport | null;
             <tr>
               <th>Dealer</th>
               <th>Status</th>
-              <th>Leads</th>
-              <th>Repeat customers</th>
+              <th className="num">Leads</th>
+              <th className="num">Repeat customers</th>
               <th>Avg distance</th>
               <th>Radius</th>
               <th>Total cap</th>
               <th>Monthly cap</th>
-              {report.shadow ? null : <th>Delivered to CRM</th>}
+              {report.shadow ? null : <th className="num">Delivered to CRM</th>}
               {report.shadow ? null : <th>Failed / bounced</th>}
             </tr>
           </thead>
@@ -448,13 +424,13 @@ function RoutingView({ report, error, loading }: { report: RoutingReport | null;
                 <td>
                   <span className={`badge status-${d.status}`}>{d.status}</span>
                 </td>
-                <td>{d.leads.total}</td>
-                <td>{d.leads.sticky}</td>
+                <td className="num">{d.leads.total}</td>
+                <td className="num">{d.leads.sticky}</td>
                 <td>{d.avg_distance_miles == null ? '—' : `${d.avg_distance_miles} mi`}</td>
                 <td>{d.radius_miles == null ? '—' : `${d.radius_miles} mi`}</td>
                 <td className={d.caps.total && d.caps.total.remaining === 0 ? 'at-cap' : ''}>{capText(d.caps.total)}</td>
                 <td className={d.caps.monthly && d.caps.monthly.remaining === 0 ? 'at-cap' : ''}>{capText(d.caps.monthly)}</td>
-                {d.delivery ? <td>{d.delivery.leads_delivered}</td> : null}
+                {d.delivery ? <td className="num">{d.delivery.leads_delivered}</td> : null}
                 {d.delivery ? (
                   <td className={d.delivery.sends_failed + d.delivery.sends_bounced ? 'at-cap' : ''}>
                     {d.delivery.sends_failed} / {d.delivery.sends_bounced}
@@ -470,5 +446,78 @@ function RoutingView({ report, error, loading }: { report: RoutingReport | null;
         MailerSend accepted for the dealer’s CRM address; test inboxes are never counted.
       </p>
     </>
+  )
+}
+
+// Where this period's leads went: one bar, split by dealer, with what no dealer took
+// shown hatched at the end. The first thing on the page because it answers the question
+// people open Reports to ask.
+const FLOW_SHADES = ['#0C4A36', '#0D7A52', '#4FA37E', '#8CC7AA', '#BFE0CF']
+
+function LeadFlow({ report }: { report: RoutingReport }) {
+  const t = report.totals
+  const parts = report.dealers
+    .filter((d) => d.leads.total > 0)
+    .sort((a, b) => b.leads.total - a.leads.total)
+    .map((d, i) => ({ key: d.slug, label: d.name, count: d.leads.total, color: FLOW_SHADES[i % FLOW_SHADES.length] }))
+  const share = (n: number) => (t.leads ? (n / t.leads) * 100 : 0)
+
+  return (
+    <div className="flow">
+      <p className="flow-total">
+        <span className="flow-number">{t.leads.toLocaleString()}</span>
+        <span className="flow-caption">
+          {t.leads === 1 ? 'lead' : 'leads'} in this range
+          {t.leads ? `, ${pct(t.assigned, t.leads)} went to a dealer` : ''}
+        </span>
+      </p>
+
+      {t.leads ? (
+        <div className="flow-bar" role="img" aria-label={`${t.assigned} assigned, ${t.unassigned} unassigned`}>
+          {parts.map((p) => (
+            <span key={p.key} style={{ width: `${share(p.count)}%`, background: p.color }} title={`${p.label}: ${p.count}`} />
+          ))}
+          {t.unassigned ? (
+            <span className="flow-unassigned" style={{ width: `${share(t.unassigned)}%` }} title={`Unassigned: ${t.unassigned}`} />
+          ) : null}
+        </div>
+      ) : (
+        <p className="empty-row">No leads in this range yet.</p>
+      )}
+
+      {t.leads ? (
+        <ul className="flow-legend">
+          {parts.map((p) => (
+            <li key={p.key}>
+              <i style={{ background: p.color }} aria-hidden="true" />
+              <span className="flow-name">{p.label}</span>
+              <span className="flow-count">
+                {p.count.toLocaleString()} ({pct(p.count, t.leads)})
+              </span>
+            </li>
+          ))}
+          {t.unassigned ? (
+            <li>
+              <i className="flow-unassigned" aria-hidden="true" />
+              <span className="flow-name">Unassigned</span>
+              <span className="flow-count">
+                {t.unassigned.toLocaleString()} ({pct(t.unassigned, t.leads)})
+              </span>
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+
+      {report.unassigned_by_reason.length ? (
+        <div className="reason-list">
+          <span className="muted">Why unassigned:</span>
+          {report.unassigned_by_reason.map((r) => (
+            <span key={r.reason} className={`badge reason-${r.reason}`}>
+              {reasonLabel(r.reason)} ({r.leads})
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
   )
 }

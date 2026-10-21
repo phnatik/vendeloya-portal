@@ -55,6 +55,7 @@ const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
 // The session token from POST /auth/login, sent as a Bearer token on every request.
 // sessionStorage: it's gone when the tab closes, and the server expires it after 12h.
 const TOKEN_KEY = 'portal-token'
+const USER_KEY = 'portal-user'
 const MOBILE_BREAKPOINT = 740
 
 const toNumber = (value: string | null): number | null => {
@@ -152,6 +153,7 @@ function App() {
   const [authError, setAuthError] = useState('')
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [token, setToken] = useState<string | null>(sessionStorage.getItem(TOKEN_KEY))
+  const [userEmail, setUserEmail] = useState<string>(sessionStorage.getItem(USER_KEY) ?? '')
   const isAuthenticated = Boolean(token)
   const [view, setView] = useState<'leads' | 'reports'>('leads')
 
@@ -171,13 +173,14 @@ function App() {
 
   const [sortKey, setSortKey] = useState<SortKey>('created_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
-  const [isMobileViewport, setIsMobileViewport] = useState(false)
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false)
 
   // Back to the sign-in screen, e.g. when the server says the token is no longer valid.
   const signOutLocally = useCallback((message = '') => {
     sessionStorage.removeItem(TOKEN_KEY)
+    sessionStorage.removeItem(USER_KEY)
     setToken(null)
+    setUserEmail('')
     setPassword('')
     setAuthError(message)
   }, [])
@@ -185,8 +188,8 @@ function App() {
   useEffect(() => {
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`)
 
+    // Filters start open on a wide screen and folded away on a phone.
     const syncViewportMode = (matches: boolean) => {
-      setIsMobileViewport(matches)
       setIsMobileFiltersOpen(!matches)
     }
 
@@ -534,7 +537,9 @@ function App() {
 
       if (response.ok && payload.token) {
         sessionStorage.setItem(TOKEN_KEY, payload.token)
+        sessionStorage.setItem(USER_KEY, payload.user?.email ?? email)
         setToken(payload.token)
+        setUserEmail(payload.user?.email ?? email)
         setPassword('')
         return
       }
@@ -641,8 +646,9 @@ function App() {
     return (
       <main className="login-layout">
         <section className="login-card">
-          <img src={logo} className="brand-logo" alt="Vendeloya" />          
-          <p className="subtitle">Secure access to lead intake and vehicle signals.</p>
+          <img src={logo} className="brand-logo" alt="Vendéloya" />
+          <h1 className="login-title">Sign in to the portal</h1>
+          <p className="subtitle">Leads, routing and dealer reports.</p>
 
           <form className="login-form" onSubmit={handleLogin}>
             <label>
@@ -668,8 +674,8 @@ function App() {
             </label>
 
             {authError ? <p className="error">{authError}</p> : null}
-            <button type="submit" disabled={isSigningIn}>
-              {isSigningIn ? 'Signing in…' : 'Sign In'}
+            <button type="submit" className="btn btn-primary" disabled={isSigningIn}>
+              {isSigningIn ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
         </section>
@@ -678,68 +684,77 @@ function App() {
   }
 
   return (
-    <main className="portal-layout">
-      <header className="portal-header">
-        <div className="header-brand">
-          <img src={logo} className="brand-logo" alt="Vendeloya" />
-          <div>
-            <h1 className="header-title">Dashboard</h1>
-            <p className="header-subtitle">Live lead intelligence and pipeline activity</p>
-          </div>
-        </div>
-        <div className="header-actions">
-          <nav className="view-tabs" aria-label="Sections">
-            <button
-              type="button"
-              className={view === 'leads' ? 'view-tab active' : 'view-tab'}
-              onClick={() => setView('leads')}
-            >
-              Leads
-            </button>
-            <button
-              type="button"
-              className={view === 'reports' ? 'view-tab active' : 'view-tab'}
-              onClick={() => setView('reports')}
-            >
-              Reports
-            </button>
-          </nav>
-          <button type="button" className="ghost" onClick={logout}>
-            Log out
+    <div className="shell">
+      <aside className="sidebar">
+        <img src={logo} className="sidebar-logo" alt="Vendéloya" />
+        <nav className="side-nav" aria-label="Sections">
+          <button
+            type="button"
+            className={view === 'leads' ? 'side-link active' : 'side-link'}
+            aria-current={view === 'leads' ? 'page' : undefined}
+            onClick={() => setView('leads')}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h9" /></svg>
+            Leads
+          </button>
+          <button
+            type="button"
+            className={view === 'reports' ? 'side-link active' : 'side-link'}
+            aria-current={view === 'reports' ? 'page' : undefined}
+            onClick={() => setView('reports')}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16V9M10 16V4M16 16v-5" /></svg>
+            Reports
+          </button>
+        </nav>
+        <div className="side-foot">
+          <p className="side-user" title={userEmail}>{userEmail || 'Signed in'}</p>
+          <button type="button" className="btn btn-quiet" onClick={logout}>
+            Sign out
           </button>
         </div>
-      </header>
+      </aside>
 
+      <main className="main">
       {view === 'reports' && token ? (
         <Reports token={token} onUnauthorized={signOutLocally} />
       ) : (
-      <div className="portal-content">
-        <section className="filters-grid">
+      <div className="page">
+        <header className="page-head">
+          <div>
+            <h1 className="page-title">Leads</h1>
+            <p className="page-desc">Every seller who entered the funnel, newest first.</p>
+          </div>
+          <div className="page-actions">
+            {isLoading ? <span className="muted">Loading…</span> : null}
+            <button type="button" className="btn btn-secondary" onClick={downloadCsv}>
+              Download CSV
+            </button>
+          </div>
+        </header>
+
+        <section className="panel filters-panel">
           <div className="filters-header">
             <h2>Filters</h2>
             <div className="filters-actions">
-              <button type="button" className="clear-filters" onClick={clearFilters}>
+              <button type="button" className="btn btn-quiet" onClick={clearFilters}>
                 Clear filters
               </button>
-              {isMobileViewport ? (
-                <button
-                  type="button"
-                  className="filters-toggle"
-                  onClick={() => setIsMobileFiltersOpen((prev) => !prev)}
-                  aria-expanded={isMobileFiltersOpen}
-                  aria-controls="filters-fields"
-                >
-                  {isMobileFiltersOpen ? 'Hide' : 'Show'}
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className="btn btn-quiet"
+                onClick={() => setIsMobileFiltersOpen((prev) => !prev)}
+                aria-expanded={isMobileFiltersOpen}
+                aria-controls="filters-fields"
+              >
+                {isMobileFiltersOpen ? 'Hide filters' : 'Show filters'}
+              </button>
             </div>
           </div>
 
           <div
             id="filters-fields"
-            className={`filters-fields ${
-              isMobileViewport && !isMobileFiltersOpen ? 'is-collapsed' : ''
-            }`}
+            className={`filters-fields ${!isMobileFiltersOpen ? 'is-collapsed' : ''}`}
           >
             <label>
               Search
@@ -835,25 +850,25 @@ function App() {
         </section>
 
         <section className="table-section">
-          <div className="kpi-grid">
+          <div className="kpi-grid kpi-4">
             <article className="kpi-card">
-              <p className="kpi-label">Records Shown</p>
+              <p className="kpi-label">Leads shown</p>
               <p className="kpi-value">{filteredLeads.length.toLocaleString()}</p>
               <p className="kpi-delta">
                 {periodMetrics.hasSelectedRange
                   ? formatDelta(periodMetrics.selectedRecords, periodMetrics.previousRecords)
-                  : 'Select a date range to see period delta'}
+                  : 'Pick dates to compare with the period before'}
               </p>
             </article>
 
             <article className="kpi-card">
-              <p className="kpi-label">Total Qualified Leads</p>
+              <p className="kpi-label">Qualified, all time</p>
               <p className="kpi-value">{periodMetrics.totalQualified.toLocaleString()}</p>
-              <p className="kpi-delta">Contact + offer across all records</p>
+              <p className="kpi-delta">Has contact details and an offer</p>
             </article>
 
             <article className="kpi-card">
-              <p className="kpi-label">Qualified Leads (MTD)</p>
+              <p className="kpi-label">Qualified this month</p>
               <p className="kpi-value">{periodMetrics.qualifiedMtd.toLocaleString()}</p>
               <p className="kpi-delta">
                 {formatDelta(periodMetrics.qualifiedMtd, periodMetrics.qualifiedPrevMtd)}
@@ -861,24 +876,14 @@ function App() {
             </article>
 
             <article className="kpi-card">
-              <p className="kpi-label">Qualified Leads (Selected Range)</p>
+              <p className="kpi-label">Qualified in selected dates</p>
               <p className="kpi-value">{periodMetrics.selectedQualified.toLocaleString()}</p>
               <p className="kpi-delta">
                 {periodMetrics.hasSelectedRange
                   ? formatDelta(periodMetrics.selectedQualified, periodMetrics.previousQualified)
-                  : 'Set both Date from and Date to'}
+                  : 'Set both dates in Filters'}
               </p>
             </article>
-          </div>
-
-          <div className="table-meta">
-            <p>{filteredLeads.length.toLocaleString()} records shown</p>
-            <div className="meta-actions">
-              {isLoading ? <p>Loading API data...</p> : null}
-              <button type="button" className="download-csv" onClick={downloadCsv}>
-                Download CSV
-              </button>
-            </div>
           </div>
 
           <div className="sort-controls">
@@ -1030,7 +1035,8 @@ function App() {
         </section>
       </div>
       )}
-    </main>
+      </main>
+    </div>
   )
 }
 

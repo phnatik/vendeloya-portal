@@ -1,15 +1,34 @@
+/* Design tokens. Colours come from the Vendéloya brand and logo: forest and brand green
+   carry the interface; the logo's red is kept for problems only (failed sends, a dealer at
+   its cap), so red always means "look here". Gold marks a dealer still in testing. */
 :root {
-  --bg-start: #edf8f2;
-  --bg-end: #e4f3eb;
-  --panel: rgba(255, 255, 255, 0.92);
-  --line: #d4d4d8;
-  --text: #18181b;
-  --text-muted: #52525b;
-  --focus: #ea580c;
-  --shadow-lg: 0 24px 60px -30px rgba(2, 6, 23, 0.5);
+  --page: #f3f6f4;
+  --surface: #ffffff;
+  --forest: #0c4a36;
+  --green: #0d7a52;
+  --green-dark: #0a5f40;
+  --mint: #e6f2ec;
+  --ink: #14302a;
+  --sage: #5e7a6c;
+  --line: #dce6e0;
+  --line-strong: #c5d6cb;
+  --flag: #c71222;
+  --flag-soft: #fcebec;
+  --gold: #f0b73e;
+  --gold-soft: #fdf3dc;
+  --focus: #0d7a52;
 
-  font-family: 'Avenir Next', 'Avenir', 'Segoe UI', sans-serif;
-  color: var(--text);
+  --font-ui: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque', var(--font-ui);
+
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --sidebar: 236px;
+
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -24,13 +43,17 @@ body {
   margin: 0;
   min-height: 100vh;
   overflow-x: hidden;
-  background:
-    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.7), transparent 38%),
-    radial-gradient(circle at 90% 12%, rgba(16, 185, 129, 0.08), transparent 40%),
-    linear-gradient(135deg, var(--bg-start) 0%, var(--bg-end) 100%);
+  background: var(--page);
 }
 
-h1 {
-  font-size: clamp(1.6rem, 2.6vw, 2.2rem);
-  letter-spacing: -0.01em;
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }
