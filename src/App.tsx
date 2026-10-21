@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import logo from './assets/vendeloya-logo.png'
 import './App.css'
+import { API_BASE } from './api'
+import Reports from './reports/Reports'
 
 type Lead = {
   id: number
@@ -48,10 +50,8 @@ const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
   { key: 'state', label: 'State' },
 ]
 
-// The backend. Override for local development with VITE_API_BASE in .env.local
-// (e.g. http://localhost:3000/api/v1).
-const API_BASE =
-  (import.meta.env.VITE_API_BASE as string | undefined) || 'https://api.vendeloya.ai/api/v1'
+// The backend URL lives in api.ts (override locally with VITE_API_BASE in .env.local,
+// e.g. http://localhost:3000/api/v1).
 // The session token from POST /auth/login, sent as a Bearer token on every request.
 // sessionStorage: it's gone when the tab closes, and the server expires it after 12h.
 const TOKEN_KEY = 'portal-token'
@@ -153,6 +153,7 @@ function App() {
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [token, setToken] = useState<string | null>(sessionStorage.getItem(TOKEN_KEY))
   const isAuthenticated = Boolean(token)
+  const [view, setView] = useState<'leads' | 'reports'>('leads')
 
   const [leads, setLeads] = useState<Lead[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -174,12 +175,12 @@ function App() {
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false)
 
   // Back to the sign-in screen, e.g. when the server says the token is no longer valid.
-  const signOutLocally = (message = '') => {
+  const signOutLocally = useCallback((message = '') => {
     sessionStorage.removeItem(TOKEN_KEY)
     setToken(null)
     setPassword('')
     setAuthError(message)
-  }
+  }, [])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`)
@@ -253,7 +254,7 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [token])
+  }, [token, signOutLocally])
 
   const states = useMemo(() => {
     return [...new Set(leads.map((lead) => normalize(lead.state)).filter(Boolean))]
@@ -687,12 +688,31 @@ function App() {
           </div>
         </div>
         <div className="header-actions">
+          <nav className="view-tabs" aria-label="Sections">
+            <button
+              type="button"
+              className={view === 'leads' ? 'view-tab active' : 'view-tab'}
+              onClick={() => setView('leads')}
+            >
+              Leads
+            </button>
+            <button
+              type="button"
+              className={view === 'reports' ? 'view-tab active' : 'view-tab'}
+              onClick={() => setView('reports')}
+            >
+              Reports
+            </button>
+          </nav>
           <button type="button" className="ghost" onClick={logout}>
             Log out
           </button>
         </div>
       </header>
 
+      {view === 'reports' && token ? (
+        <Reports token={token} onUnauthorized={signOutLocally} />
+      ) : (
       <div className="portal-content">
         <section className="filters-grid">
           <div className="filters-header">
@@ -1009,6 +1029,7 @@ function App() {
           </div>
         </section>
       </div>
+      )}
     </main>
   )
 }
