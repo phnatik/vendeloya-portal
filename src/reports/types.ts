@@ -88,3 +88,21 @@ export const MISSED_LABELS: Record<keyof DealerArea['missed'], string> = {
   total_cap: 'It was at its total cap',
   monthly_cap: 'It was at its monthly cap',
 }
+
+export type VehicleDealerRow = {
+  slug: string | null // null = unassigned
+  name: string
+  leads: number
+  avg_mileage: number | null
+  avg_model_year: number | null
+  avg_age_years: number | null
+  top_make: { make: string; leads: number; share: number } | null
+  counted: { mileage: number; model_year: number }
+}
+
+export type VehicleReport = {
+  range: Range
+  dealer: string | null
+  dealers: VehicleDealerRow[]
+  makes: { total: number; rows: Array<{ make: string; leads: number; share: number; other?: boolean }> }
+}

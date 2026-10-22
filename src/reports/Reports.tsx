@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet, query, UnauthorizedError } from '../api'
+import BarChart from './BarChart'
 import {
   MISSED_LABELS,
   reasonLabel,
@@ -9,6 +10,7 @@ import {
   type DeliveriesReport,
   type RoutingReport,
   type UnassignedReport,
+  type VehicleReport,
 } from './types'
 
 // The Reports tab: three views over the backend's /reports endpoints.
@@ -19,7 +21,14 @@ import {
 // With a dealer picked, Routing shows that dealer's area, Unassigned shows the leads in
 // its radius nobody took, and Deliveries shows what it was sent.
 
-type Tab = 'routing' | 'unassigned' | 'deliveries'
+type Tab = 'routing' | 'unassigned' | 'deliveries' | 'vehicles'
+
+const TAB_LABELS: Record<Tab, string> = {
+  routing: 'Routing',
+  unassigned: 'Unassigned',
+  deliveries: 'Deliveries',
+  vehicles: 'Vehicles',
+}
 
 type Props = {
   token: string
@@ -109,6 +118,12 @@ export default function Reports({ token, onUnauthorized }: Props) {
     onUnauthorized,
   )
 
+  const vehicles = useReport<VehicleReport>(
+    tab === 'vehicles' ? `/reports/vehicles${query({ from, to, dealer })}` : null,
+    token,
+    onUnauthorized,
+  )
+
   const range = routing.data?.range
   const dealers = dealerList.data?.dealers ?? []
   const dealerName = dealers.find((d) => d.slug === dealer)?.name ?? dealer
@@ -124,7 +139,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
 
       <section className="panel toolbar">
         <div className="segmented" role="tablist" aria-label="Report">
-          {(['routing', 'unassigned', 'deliveries'] as Tab[]).map((t) => (
+          {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -133,7 +148,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
               className={tab === t ? 'segment active' : 'segment'}
               onClick={() => setTab(t)}
             >
-              {t === 'routing' ? 'Routing' : t === 'unassigned' ? 'Unassigned' : 'Deliveries'}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
@@ -207,6 +222,10 @@ export default function Reports({ token, onUnauthorized }: Props) {
       <section className="table-section">
         {tab === 'routing' ? (
           <RoutingView report={routing.data} error={routing.error} loading={routing.loading} dealerName={dealerName} />
+        ) : null}
+
+        {tab === 'vehicles' ? (
+          <VehiclesView report={vehicles.data} error={vehicles.error} loading={vehicles.loading} dealerName={dealerName} />
         ) : null}
 
         {tab === 'unassigned' ? (
@@ -607,6 +626,131 @@ function AreaFlow({ area, name }: { area: DealerArea; name: string }) {
 
       <p className="report-note">
         “Its area” is every lead inside its radius, plus any repeat customer sent to it from outside.
+      </p>
+    </div>
+  )
+}
+
+const miles = (n: number | null) => (n == null ? '—' : `${Math.round(n).toLocaleString()} mi`)
+
+// What kind of vehicles each dealer is getting. Two bar charts side by side (average
+// mileage, average age), the per-dealer table, then the make breakdown with its table.
+// Age rather than model year in the chart: a bar's length must mean an amount, and
+// "2019" drawn from zero means nothing; the table carries the model year itself.
+function VehiclesView({
+  report,
+  error,
+  loading,
+  dealerName,
+}: {
+  report: VehicleReport | null
+  error: string
+  loading: boolean
+  dealerName: string
+}) {
+  if (error) return <p className="error">{error}</p>
+  if (!report) return <p className="empty-row">{loading ? 'Loading…' : 'No data.'}</p>
+  if (!report.dealers.length) return <p className="empty-row">No routed leads in this range.</p>
+
+  const scope = report.dealer ? dealerName : 'all leads'
+  const counted = (r: VehicleReport['dealers'][number], n: number) => `${r.leads} leads, ${n} with a usable value`
+
+  return (
+    <div className={loading ? 'refreshing' : ''}>
+      <div className="chart-grid">
+        <BarChart
+          title="Average mileage"
+          caption="By dealer, for leads in this range"
+          unit="miles"
+          rows={report.dealers.map((r) => ({
+            key: r.slug ?? 'unassigned',
+            label: r.name,
+            value: r.avg_mileage,
+            display: miles(r.avg_mileage),
+            detail: counted(r, r.counted.mileage),
+            muted: r.slug === null,
+          }))}
+        />
+        <BarChart
+          title="Average vehicle age"
+          caption="Years since model year"
+          unit="years"
+          rows={report.dealers.map((r) => ({
+            key: r.slug ?? 'unassigned',
+            label: r.name,
+            value: r.avg_age_years,
+            display: r.avg_age_years == null ? '—' : `${r.avg_age_years} yrs`,
+            detail: r.avg_model_year == null ? undefined : `Average model year ${r.avg_model_year}. ${counted(r, r.counted.model_year)}`,
+            muted: r.slug === null,
+          }))}
+        />
+      </div>
+
+      <div className="table-wrap section-gap">
+        <table>
+          <thead>
+            <tr>
+              <th>Dealer</th>
+              <th className="num">Leads</th>
+              <th className="num">Avg mileage</th>
+              <th className="num">Avg model year</th>
+              <th className="num">Avg age</th>
+              <th>Most common make</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.dealers.map((r) => (
+              <tr key={r.slug ?? 'unassigned'}>
+                <td className={r.slug ? '' : 'muted'}>{r.name}</td>
+                <td className="num">{r.leads}</td>
+                <td className="num">{miles(r.avg_mileage)}</td>
+                <td className="num">{r.avg_model_year ?? '—'}</td>
+                <td className="num">{r.avg_age_years == null ? '—' : `${r.avg_age_years} yrs`}</td>
+                <td>{r.top_make ? `${r.top_make.make} (${r.top_make.leads}, ${r.top_make.share}%)` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="chart-grid section-gap">
+        <BarChart
+          title="Top makes"
+          caption={`Leads by make, ${scope}`}
+          unit="leads"
+          rows={report.makes.rows.map((m) => ({
+            key: m.make,
+            label: m.make,
+            value: m.leads,
+            display: `${m.leads}`,
+            detail: `${m.share}% of ${report.makes.total} leads`,
+            muted: !!m.other,
+          }))}
+        />
+        <div className="table-wrap">
+          <table className="compact">
+            <thead>
+              <tr>
+                <th>Make</th>
+                <th className="num">Leads</th>
+                <th className="num">Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.makes.rows.map((m) => (
+                <tr key={m.make}>
+                  <td className={m.other ? 'muted' : ''}>{m.make}</td>
+                  <td className="num">{m.leads}</td>
+                  <td className="num">{m.share}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p className="report-note">
+        Leads count toward the dealer routing sent them to; “Unassigned” is what no dealer took. Averages use only leads with a
+        usable mileage or model year; hover or focus a bar to see how many that was.
       </p>
     </div>
   )
