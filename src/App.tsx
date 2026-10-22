@@ -4,6 +4,7 @@ import logo from './assets/vendeloya-logo.png'
 import './App.css'
 import { API_BASE } from './api'
 import Reports from './reports/Reports'
+import Dealers from './dealers/Dealers'
 
 type Lead = {
   id: number
@@ -62,6 +63,7 @@ const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
 // sessionStorage: it's gone when the tab closes, and the server expires it after 12h.
 const TOKEN_KEY = 'portal-token'
 const USER_KEY = 'portal-user'
+const ROLE_KEY = 'portal-role'
 const MOBILE_BREAKPOINT = 740
 
 const toNumber = (value: string | null): number | null => {
@@ -189,8 +191,10 @@ function App() {
   const [isSigningIn, setIsSigningIn] = useState(false)
   const [token, setToken] = useState<string | null>(sessionStorage.getItem(TOKEN_KEY))
   const [userEmail, setUserEmail] = useState<string>(sessionStorage.getItem(USER_KEY) ?? '')
+  // 'admin' can change dealers; 'viewer' can only look. The server enforces it either way.
+  const [role, setRole] = useState<string>(sessionStorage.getItem(ROLE_KEY) ?? '')
   const isAuthenticated = Boolean(token)
-  const [view, setView] = useState<'leads' | 'reports'>('leads')
+  const [view, setView] = useState<'leads' | 'reports' | 'dealers'>('leads')
 
   const [leads, setLeads] = useState<Lead[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -215,6 +219,7 @@ function App() {
   const signOutLocally = useCallback((message = '') => {
     sessionStorage.removeItem(TOKEN_KEY)
     sessionStorage.removeItem(USER_KEY)
+    sessionStorage.removeItem(ROLE_KEY)
     setToken(null)
     setUserEmail('')
     setPassword('')
@@ -596,6 +601,8 @@ function App() {
       if (response.ok && payload.token) {
         sessionStorage.setItem(TOKEN_KEY, payload.token)
         sessionStorage.setItem(USER_KEY, payload.user?.email ?? email)
+        sessionStorage.setItem(ROLE_KEY, payload.user?.role ?? '')
+        setRole(payload.user?.role ?? '')
         setToken(payload.token)
         setUserEmail(payload.user?.email ?? email)
         setPassword('')
@@ -766,6 +773,15 @@ function App() {
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16V9M10 16V4M16 16v-5" /></svg>
             Reports
           </button>
+          <button
+            type="button"
+            className={view === 'dealers' ? 'side-link active' : 'side-link'}
+            aria-current={view === 'dealers' ? 'page' : undefined}
+            onClick={() => setView('dealers')}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17h14M4.5 17V8.5L10 4l5.5 4.5V17M8 17v-4h4v4" /></svg>
+            Dealers
+          </button>
         </nav>
         <div className="side-foot">
           <p className="side-user" title={userEmail}>{userEmail || 'Signed in'}</p>
@@ -776,7 +792,9 @@ function App() {
       </aside>
 
       <main className="main">
-      {view === 'reports' && token ? (
+      {view === 'dealers' && token ? (
+        <Dealers token={token} canEdit={role === 'admin'} onUnauthorized={signOutLocally} />
+      ) : view === 'reports' && token ? (
         <Reports token={token} onUnauthorized={signOutLocally} />
       ) : (
       <div className="page">
