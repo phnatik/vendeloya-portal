@@ -1299,3 +1299,50 @@ tr.clickable:hover .link-button {
     gap: 2px;
   }
 }
+
+/* -------------------------------------------------------------- onboarding */
+
+.new-form {
+  border-top: none;
+  padding-top: 18px;
+}
+
+.invite-link {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--radius-s);
+  background: var(--mint);
+}
+
+.copy-row {
+  display: flex;
+  gap: 8px;
+}
+
+.copy-row input {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.check {
+  padding: 12px 14px;
+  border-radius: var(--radius-s);
+  font-size: 14px;
+}
+
+.good-check {
+  background: var(--mint);
+  color: var(--green-dark);
+}
+
+.bad-check {
+  background: var(--gold-soft);
+  color: #6b4600;
+}
+
+.bad-check ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}

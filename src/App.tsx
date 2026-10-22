@@ -5,6 +5,7 @@ import './App.css'
 import { API_BASE } from './api'
 import Reports from './reports/Reports'
 import Dealers from './dealers/Dealers'
+import Onboarding from './onboarding/Onboarding'
 
 type Lead = {
   id: number
@@ -194,7 +195,9 @@ function App() {
   // 'admin' can change dealers; 'viewer' can only look. The server enforces it either way.
   const [role, setRole] = useState<string>(sessionStorage.getItem(ROLE_KEY) ?? '')
   const isAuthenticated = Boolean(token)
-  const [view, setView] = useState<'leads' | 'reports' | 'dealers'>('leads')
+  const [view, setView] = useState<'leads' | 'reports' | 'dealers' | 'onboarding'>('leads')
+  // The dealer page open under Dealers (null = the list); Onboarding opens one after Process.
+  const [dealerSlug, setDealerSlug] = useState<string | null>(null)
 
   const [leads, setLeads] = useState<Lead[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -777,10 +780,22 @@ function App() {
             type="button"
             className={view === 'dealers' ? 'side-link active' : 'side-link'}
             aria-current={view === 'dealers' ? 'page' : undefined}
-            onClick={() => setView('dealers')}
+            onClick={() => {
+              setView('dealers')
+              setDealerSlug(null)
+            }}
           >
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17h14M4.5 17V8.5L10 4l5.5 4.5V17M8 17v-4h4v4" /></svg>
             Dealers
+          </button>
+          <button
+            type="button"
+            className={view === 'onboarding' ? 'side-link active' : 'side-link'}
+            aria-current={view === 'onboarding' ? 'page' : undefined}
+            onClick={() => setView('onboarding')}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>
+            Onboarding
           </button>
         </nav>
         <div className="side-foot">
@@ -793,7 +808,17 @@ function App() {
 
       <main className="main">
       {view === 'dealers' && token ? (
-        <Dealers token={token} canEdit={role === 'admin'} onUnauthorized={signOutLocally} />
+        <Dealers token={token} canEdit={role === 'admin'} onUnauthorized={signOutLocally} selected={dealerSlug} onSelect={setDealerSlug} />
+      ) : view === 'onboarding' && token ? (
+        <Onboarding
+          token={token}
+          canEdit={role === 'admin'}
+          onUnauthorized={signOutLocally}
+          onOpenDealer={(slug) => {
+            setDealerSlug(slug)
+            setView('dealers')
+          }}
+        />
       ) : view === 'reports' && token ? (
         <Reports token={token} onUnauthorized={signOutLocally} />
       ) : (

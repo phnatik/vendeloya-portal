@@ -22,6 +22,8 @@ type Props = {
   canEdit: boolean
   onSave: (changes: Record<string, unknown>, reason: string) => Promise<void>
   extraActions?: React.ReactNode
+  // Dealer changes are logged with a reason; onboarding forms aren't, so they hide it.
+  askReason?: boolean
 }
 
 const asInput = (field: Field, v: unknown): string | boolean => {
@@ -29,7 +31,7 @@ const asInput = (field: Field, v: unknown): string | boolean => {
   return v == null ? '' : String(v)
 }
 
-export default function SectionForm({ title, description, fields, values, canEdit, onSave, extraActions }: Props) {
+export default function SectionForm({ title, description, fields, values, canEdit, onSave, extraActions, askReason = true }: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<Record<string, string | boolean>>({})
   const [reason, setReason] = useState('')
@@ -115,10 +117,12 @@ export default function SectionForm({ title, description, fields, values, canEdi
               {f.help ? <small className="muted">{f.help}</small> : null}
             </label>
           ))}
-          <label className="reason-field">
-            <span>Reason for the change (optional, saved in the activity log)</span>
-            <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Joseph approved a wider radius" />
-          </label>
+          {askReason ? (
+            <label className="reason-field">
+              <span>Reason for the change (optional, saved in the activity log)</span>
+              <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Joseph approved a wider radius" />
+            </label>
+          ) : null}
           {error ? <p className="error form-error">{error}</p> : null}
           <div className="form-actions">
             <button type="submit" className="btn btn-primary" disabled={saving}>

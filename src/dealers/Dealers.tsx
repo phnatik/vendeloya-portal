@@ -11,6 +11,10 @@ type Props = {
   token: string
   canEdit: boolean
   onUnauthorized: (message: string) => void
+  // Which dealer page is open (null = the list). Held by App so other sections, such as
+  // Onboarding after "Process", can open a dealer directly.
+  selected: string | null
+  onSelect: (slug: string | null) => void
 }
 
 const STATUS_LABEL: Record<DealerStatus, string> = { inactive: 'Inactive', testing: 'Testing', active: 'Active' }
@@ -20,8 +24,7 @@ const when = (iso: string | null) =>
     ? new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
     : '—'
 
-export default function Dealers({ token, canEdit, onUnauthorized }: Props) {
-  const [selected, setSelected] = useState<string | null>(null)
+export default function Dealers({ token, canEdit, onUnauthorized, selected, onSelect: setSelected }: Props) {
   const [list, setList] = useState<DealerListRow[] | null>(null)
   const [error, setError] = useState('')
 
