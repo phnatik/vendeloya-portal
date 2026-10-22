@@ -29,6 +29,12 @@ type Lead = {
   adjusted_retail_avg: number | null
   adjusted_tradein_clean: number | null
   adjusted_retail_xclean: number | null
+  // Where the lead went (from routing). dealer_* are null when no dealer got it;
+  // routing_outcome is null when it was never routed (funnel not finished).
+  dealer_slug: string | null
+  dealer_name: string | null
+  routing_outcome: string | null
+  routing_reason: string | null
 }
 
 type ApiResponse = {
@@ -137,6 +143,35 @@ const hasOffer = (lead: Lead): boolean => {
 
 const isQualifiedLead = (lead: Lead): boolean => hasContactInfo(lead) && hasOffer(lead)
 
+// Dealer filter values besides a dealer slug.
+const UNASSIGNED = '__unassigned'
+const NOT_ROUTED = '__not_routed'
+
+const UNASSIGNED_REASONS: Record<string, string> = {
+  out_of_range: 'outside every radius',
+  all_capped: 'dealer at cap',
+  filtered_out: 'dealer filters',
+  unknown_zip: 'unknown ZIP',
+  no_active_dealers: 'no active dealers',
+}
+
+// "Group 1 Toyota North Austin", "Unassigned (dealer filters)" or "Not routed yet".
+const dealerLabel = (lead: Lead): string => {
+  if (lead.dealer_name) return lead.dealer_name
+  if (lead.routing_outcome === 'unassigned') {
+    const why = lead.routing_reason ? UNASSIGNED_REASONS[lead.routing_reason] ?? lead.routing_reason : ''
+    return why ? `Unassigned (${why})` : 'Unassigned'
+  }
+  return 'Not routed yet'
+}
+
+const matchesDealerFilter = (lead: Lead, filter: string): boolean => {
+  if (filter === 'all') return true
+  if (filter === UNASSIGNED) return !lead.dealer_slug && lead.routing_outcome === 'unassigned'
+  if (filter === NOT_ROUTED) return !lead.dealer_slug && !lead.routing_outcome
+  return lead.dealer_slug === filter
+}
+
 const getStartOfMonth = (date: Date): Date => {
   return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0)
 }
@@ -163,6 +198,7 @@ function App() {
 
   const [searchTerm, setSearchTerm] = useState('')
   const [stateFilter, setStateFilter] = useState('all')
+  const [dealerFilter, setDealerFilter] = useState('all')
   const [yearSearch, setYearSearch] = useState('')
   const [makeSearch, setMakeSearch] = useState('')
   const [modelSearch, setModelSearch] = useState('')
@@ -263,6 +299,15 @@ function App() {
     return [...new Set(leads.map((lead) => normalize(lead.state)).filter(Boolean))]
   }, [leads])
 
+  // Every dealer that has received a lead, for the Dealer filter.
+  const dealerOptions = useMemo(() => {
+    const bySlug = new Map<string, string>()
+    leads.forEach((lead) => {
+      if (lead.dealer_slug) bySlug.set(lead.dealer_slug, lead.dealer_name || lead.dealer_slug)
+    })
+    return [...bySlug.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [leads])
+
   const filteredLeads = useMemo(() => {
     const query = searchTerm.trim().toLowerCase()
     const yearQuery = yearSearch.trim().toLowerCase()
@@ -295,6 +340,7 @@ function App() {
 
         const matchesState =
           stateFilter === 'all' || normalize(lead.state) === stateFilter
+        const matchesDealer = matchesDealerFilter(lead, dealerFilter)
         const matchesYear = !yearQuery || normalize(lead.model_year).toLowerCase().includes(yearQuery)
         const matchesMake = !makeQuery || normalize(lead.make).toLowerCase().includes(makeQuery)
         const matchesModel = !modelQuery || normalize(lead.model).toLowerCase().includes(modelQuery)
@@ -309,6 +355,7 @@ function App() {
         return (
           matchesQuery &&
           matchesState &&
+        matchesDealer &&
           matchesYear &&
           matchesMake &&
           matchesModel &&
@@ -370,6 +417,7 @@ function App() {
     leads,
     searchTerm,
     stateFilter,
+    dealerFilter,
     yearSearch,
     makeSearch,
     modelSearch,
@@ -409,6 +457,7 @@ function App() {
 
       const matchesState =
         stateFilter === 'all' || normalize(lead.state) === stateFilter
+      const matchesDealer = matchesDealerFilter(lead, dealerFilter)
       const matchesYear = !yearQuery || normalize(lead.model_year).toLowerCase().includes(yearQuery)
       const matchesMake = !makeQuery || normalize(lead.make).toLowerCase().includes(makeQuery)
       const matchesModel = !modelQuery || normalize(lead.model).toLowerCase().includes(modelQuery)
@@ -418,6 +467,7 @@ function App() {
       return (
         matchesQuery &&
         matchesState &&
+        matchesDealer &&
         matchesYear &&
         matchesMake &&
         matchesModel &&
@@ -429,6 +479,7 @@ function App() {
     leads,
     searchTerm,
     stateFilter,
+    dealerFilter,
     yearSearch,
     makeSearch,
     modelSearch,
@@ -570,6 +621,7 @@ function App() {
   const clearFilters = () => {
     setSearchTerm('')
     setStateFilter('all')
+    setDealerFilter('all')
     setYearSearch('')
     setMakeSearch('')
     setModelSearch('')
@@ -590,6 +642,7 @@ function App() {
       'Mileage',
       'State',
       'Zip',
+      'Dealer',
       'Adjusted Whole Avg',
       'Email',
       'Phone',
@@ -606,6 +659,7 @@ function App() {
         lead.current_mileage ?? '',
         normalize(lead.state),
         normalize(lead.zip_code),
+        dealerLabel(lead),
         lead.adjusted_whole_avg,
         normalize(lead.email_address),
         normalize(lead.phone_number),
@@ -764,6 +818,20 @@ function App() {
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
               />
+            </label>
+
+            <label>
+              Dealer
+              <select value={dealerFilter} onChange={(event) => setDealerFilter(event.target.value)}>
+                <option value="all">All leads</option>
+                {dealerOptions.map(([slug, name]) => (
+                  <option key={slug} value={slug}>
+                    {name}
+                  </option>
+                ))}
+                <option value={UNASSIGNED}>Unassigned (no dealer took it)</option>
+                <option value={NOT_ROUTED}>Not routed yet (funnel not finished)</option>
+              </select>
             </label>
 
             <label>
@@ -928,6 +996,7 @@ function App() {
                       Name
                     </button>
                   </th>
+                  <th>Dealer</th>
                   <th>
                     <button type="button" onClick={() => updateSort('current_mileage')}>
                       Mileage
@@ -959,6 +1028,7 @@ function App() {
                     <tr key={lead.id}>
                       <td>{formatDate(lead.created_at)}</td>
                       <td>{fullName || '-'}</td>
+                      <td className={lead.dealer_slug ? '' : 'muted'}>{dealerLabel(lead)}</td>
                       <td>{formatMileage(lead.current_mileage)}</td>
                       <td>{normalize(lead.model_year) || '-'}</td>
                       <td>{normalize(lead.make) || '-'}</td>
@@ -977,7 +1047,7 @@ function App() {
 
                 {!isLoading && filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="empty-row">
+                    <td colSpan={10} className="empty-row">
                       No leads match the current filters.
                     </td>
                   </tr>
@@ -1001,6 +1071,10 @@ function App() {
                   <p className="lead-vehicle">{vehicle || '-'}</p>
 
                   <div className="lead-facts">
+                    <div>
+                      <span>Dealer</span>
+                      <strong>{dealerLabel(lead)}</strong>
+                    </div>
                     <div>
                       <span>Mileage</span>
                       <strong>{formatMileage(lead.current_mileage)}</strong>

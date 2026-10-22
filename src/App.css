@@ -328,6 +328,13 @@ button:disabled {
   display: none;
 }
 
+/* A select sizes itself to its longest option; keep every field inside its own cell. */
+.filters-fields input,
+.filters-fields select {
+  width: 100%;
+  min-width: 0;
+}
+
 .filters-fields label,
 .toolbar-fields label,
 .sort-controls label {
