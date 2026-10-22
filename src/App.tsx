@@ -487,6 +487,13 @@ function App() {
     mileageMax,
   ])
 
+  // The "all time" and "this month" cards ignore the search filters on purpose, but follow
+  // the dealer switcher: with a dealer picked, every number on the page is that dealer's.
+  const dealerLeads = useMemo(
+    () => leads.filter((lead) => matchesDealerFilter(lead, dealerFilter)),
+    [leads, dealerFilter],
+  )
+
   const periodMetrics = useMemo(() => {
     const now = new Date()
     const mtdStart = getStartOfMonth(now).getTime()
@@ -540,7 +547,7 @@ function App() {
     let qualifiedMtd = 0
     let qualifiedPrevMtd = 0
 
-    for (const lead of leads) {
+    for (const lead of dealerLeads) {
       if (!isQualifiedLead(lead)) {
         continue
       }
@@ -560,7 +567,7 @@ function App() {
     }
 
     return {
-      totalQualified: leads.filter(isQualifiedLead).length,
+      totalQualified: dealerLeads.filter(isQualifiedLead).length,
       selectedRecords,
       previousRecords,
       selectedQualified,
@@ -569,7 +576,7 @@ function App() {
       qualifiedPrevMtd,
       hasSelectedRange,
     }
-  }, [baseFilteredLeads, leads, fromDate, toDate])
+  }, [baseFilteredLeads, dealerLeads, fromDate, toDate])
 
   // Signs in against the backend (POST /auth/login), which checks the password and returns
   // a session token. Nothing secret lives in this app's code or build.
@@ -621,7 +628,6 @@ function App() {
   const clearFilters = () => {
     setSearchTerm('')
     setStateFilter('all')
-    setDealerFilter('all')
     setYearSearch('')
     setMakeSearch('')
     setModelSearch('')
@@ -777,9 +783,31 @@ function App() {
         <header className="page-head">
           <div>
             <h1 className="page-title">Leads</h1>
-            <p className="page-desc">Every seller who entered the funnel, newest first.</p>
+            <p className="page-desc">
+              {dealerFilter === 'all'
+                ? 'Every seller who entered the funnel, newest first.'
+                : dealerFilter === UNASSIGNED
+                  ? 'Leads no dealer took, with the reason.'
+                  : dealerFilter === NOT_ROUTED
+                    ? 'Sellers who started the funnel but never reached the contact step.'
+                    : `Leads sent to ${dealerOptions.find(([slug]) => slug === dealerFilter)?.[1] ?? dealerFilter}.`}
+            </p>
           </div>
           <div className="page-actions">
+            {/* Which leads the whole page shows. Kept out of Filters: it's the view, not a search. */}
+            <label className="dealer-switch">
+              Dealer
+              <select value={dealerFilter} onChange={(event) => setDealerFilter(event.target.value)}>
+                <option value="all">All dealers</option>
+                {dealerOptions.map(([slug, name]) => (
+                  <option key={slug} value={slug}>
+                    {name}
+                  </option>
+                ))}
+                <option value={UNASSIGNED}>Unassigned</option>
+                <option value={NOT_ROUTED}>Not routed yet</option>
+              </select>
+            </label>
             {isLoading ? <span className="muted">Loading…</span> : null}
             <button type="button" className="btn btn-secondary" onClick={downloadCsv}>
               Download CSV
@@ -818,20 +846,6 @@ function App() {
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
               />
-            </label>
-
-            <label>
-              Dealer
-              <select value={dealerFilter} onChange={(event) => setDealerFilter(event.target.value)}>
-                <option value="all">All leads</option>
-                {dealerOptions.map(([slug, name]) => (
-                  <option key={slug} value={slug}>
-                    {name}
-                  </option>
-                ))}
-                <option value={UNASSIGNED}>Unassigned (no dealer took it)</option>
-                <option value={NOT_ROUTED}>Not routed yet (funnel not finished)</option>
-              </select>
             </label>
 
             <label>

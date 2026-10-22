@@ -286,8 +286,23 @@ button:disabled {
 
 .page-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.dealer-switch {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dealer-switch select {
+  min-width: 240px;
+  font-weight: 600;
+  color: var(--forest);
+  border-color: var(--green);
 }
 
 /* ------------------------------------------------------------ panels & forms */
