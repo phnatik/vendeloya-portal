@@ -103,6 +103,20 @@ export type VehicleDealerRow = {
 export type VehicleReport = {
   range: Range
   dealer: string | null
+  group_total: VehicleDealerRow | null
   dealers: VehicleDealerRow[]
   makes: { total: number; rows: Array<{ make: string; leads: number; share: number; other?: boolean }> }
+}
+
+// GET /api/v1/groups
+export type GroupRow = {
+  id: number
+  slug: string
+  name: string
+  notes: string | null
+  store_count: number
+  active_count: number
+  leads_this_month: number
+  leads_total: number
+  stores: Array<{ slug: string; name: string; status: 'inactive' | 'testing' | 'active'; city_state: string | null; leads_this_month: number; leads_total: number }>
 }

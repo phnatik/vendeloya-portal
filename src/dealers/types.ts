@@ -6,6 +6,7 @@ export type DealerListRow = {
   slug: string
   name: string
   status: DealerStatus
+  group: { slug: string; name: string } | null
   city_state: string | null
   zip_code: string
   crm_vendor: string | null
@@ -30,6 +31,7 @@ export type DealerDetail = {
     slug: string
     name: string
     status: DealerStatus
+    group_id: number | null
     crm_vendor: string | null
     crm_profile: string | null
     address: string | null
@@ -40,6 +42,7 @@ export type DealerDetail = {
     notes: string | null
     go_live_at: string | null
   }
+  group: { id: number; slug: string; name: string } | null
   routing: { lat: string; lng: string; service_radius_miles: string; routing_weight: number; total_cap: number | null; monthly_cap: number | null }
   filters: {
     min_model_year_enabled: number

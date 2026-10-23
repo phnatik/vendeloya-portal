@@ -6,6 +6,7 @@ import {
   reasonLabel,
   REASON_LABELS,
   type DealerArea,
+  type GroupRow,
   type CapUsage,
   type DeliveriesReport,
   type RoutingReport,
@@ -17,7 +18,8 @@ import {
 //   Routing      assigned vs unassigned, per dealer (leads, distance, caps, deliveries)
 //   Unassigned   the leads no dealer took — the ones someone has to act on
 //   Deliveries   exactly what was sent to a dealer, lead by lead
-// One date range (empty = this month so far) and one dealer picker apply to all three.
+// One date range (empty = this month so far) and one dealer picker apply to every view.
+// The picker holds a store ("<slug>") or a whole dealer group ("group:<slug>").
 // With a dealer picked, Routing shows that dealer's area, Unassigned shows the leads in
 // its radius nobody took, and Deliveries shows what it was sent.
 
@@ -33,6 +35,8 @@ const TAB_LABELS: Record<Tab, string> = {
 type Props = {
   token: string
   onUnauthorized: (message: string) => void
+  // Open with a store or group already picked, e.g. from a group's page.
+  initialScope?: string
 }
 
 const pct = (n: number, d: number): string => (d ? `${Math.round((n / d) * 100)}%` : '—')
@@ -95,38 +99,44 @@ function useReport<T>(path: string | null, token: string, onUnauthorized: Props[
   }
 }
 
-export default function Reports({ token, onUnauthorized }: Props) {
+export default function Reports({ token, onUnauthorized, initialScope = '' }: Props) {
   const [tab, setTab] = useState<Tab>('routing')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [shadow, setShadow] = useState(false)
   const [reason, setReason] = useState('')
-  const [dealer, setDealer] = useState('')
+  const [dealer, setDealer] = useState(initialScope)
   const [includeTest, setIncludeTest] = useState(false)
 
-  // Every dealer, for the picker: the network-wide report for this month, whatever is selected.
+  // Every dealer and group, for the picker, whatever is selected.
   const dealerList = useReport<RoutingReport>('/reports/routing', token, onUnauthorized)
-  const routing = useReport<RoutingReport>(`/reports/routing${query({ from, to, shadow, dealer })}`, token, onUnauthorized)
+  const groupList = useReport<GroupRow[]>('/groups', token, onUnauthorized)
+  const isGroup = dealer.startsWith('group:')
+  const scopeQuery = isGroup ? { group: dealer.slice(6) } : { dealer }
+  const routing = useReport<RoutingReport>(`/reports/routing${query({ from, to, shadow, ...scopeQuery })}`, token, onUnauthorized)
   const unassigned = useReport<UnassignedReport>(
-    tab === 'unassigned' ? `/reports/unassigned${query({ from, to, reason, dealer })}` : null,
+    tab === 'unassigned' ? `/reports/unassigned${query({ from, to, reason, ...scopeQuery })}` : null,
     token,
     onUnauthorized,
   )
   const deliveries = useReport<DeliveriesReport>(
-    tab === 'deliveries' ? `/reports/deliveries${query({ from, to, dealer, include_test: includeTest })}` : null,
+    tab === 'deliveries' ? `/reports/deliveries${query({ from, to, ...scopeQuery, include_test: includeTest })}` : null,
     token,
     onUnauthorized,
   )
 
   const vehicles = useReport<VehicleReport>(
-    tab === 'vehicles' ? `/reports/vehicles${query({ from, to, dealer })}` : null,
+    tab === 'vehicles' ? `/reports/vehicles${query({ from, to, ...scopeQuery })}` : null,
     token,
     onUnauthorized,
   )
 
   const range = routing.data?.range
   const dealers = dealerList.data?.dealers ?? []
-  const dealerName = dealers.find((d) => d.slug === dealer)?.name ?? dealer
+  const groups = groupList.data ?? []
+  const dealerName = isGroup
+    ? (groups.find((g) => `group:${g.slug}` === dealer)?.name ?? dealer.slice(6))
+    : (dealers.find((d) => d.slug === dealer)?.name ?? dealer)
 
   return (
     <div className="page">
@@ -176,11 +186,22 @@ export default function Reports({ token, onUnauthorized }: Props) {
             Dealer
             <select value={dealer} onChange={(e) => setDealer(e.target.value)}>
               <option value="">All dealers</option>
-              {dealers.map((d) => (
-                <option key={d.slug} value={d.slug}>
-                  {d.name}
-                </option>
-              ))}
+              {groups.length ? (
+                <optgroup label="Dealer groups">
+                  {groups.map((g) => (
+                    <option key={g.slug} value={`group:${g.slug}`}>
+                      {g.name} (all stores)
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              <optgroup label="Stores">
+                {dealers.map((d) => (
+                  <option key={d.slug} value={d.slug}>
+                    {d.name}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </label>
 
@@ -221,7 +242,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
 
       <section className="table-section">
         {tab === 'routing' ? (
-          <RoutingView report={routing.data} error={routing.error} loading={routing.loading} dealerName={dealerName} />
+          <RoutingView report={routing.data} error={routing.error} loading={routing.loading} dealerName={dealerName} isGroup={isGroup} />
         ) : null}
 
         {tab === 'vehicles' ? (
@@ -236,7 +257,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
                 {unassigned.loading
                   ? 'Loading…'
                   : dealer
-                    ? `${(unassigned.data?.leads.length ?? 0).toLocaleString()} lead(s) inside ${dealerName}’s radius that no dealer was sent.`
+                    ? `${(unassigned.data?.leads.length ?? 0).toLocaleString()} lead(s) inside ${isGroup ? `any ${dealerName} store’s radius` : `${dealerName}’s radius`} that no dealer was sent.`
                     : `${(unassigned.data?.leads.length ?? 0).toLocaleString()} unassigned lead(s). No dealer was sent these.`}
               </p>
               <div className="meta-actions">
@@ -335,7 +356,7 @@ export default function Reports({ token, onUnauthorized }: Props) {
                   disabled={!deliveries.data?.deliveries.length}
                   onClick={() =>
                     downloadCsv(
-                      `deliveries${dealer ? `-${dealer}` : ''}.csv`,
+                      `deliveries${dealer ? `-${dealer.replace('group:', '')}` : ''}.csv`,
                       ['Sent', 'Lead', 'Dealer', 'Customer', 'Vehicle', 'ZIP', 'Miles', 'Address', 'Kind', 'Status', 'Delivery', 'Error', 'Message id'],
                       (deliveries.data?.deliveries ?? []).map((d) => [
                         d.sent_at, d.lead_id, d.dealer, d.customer, d.vehicle, d.zip, d.distance_miles, d.recipient, d.recipient_kind,
@@ -416,11 +437,13 @@ function RoutingView({
   error,
   loading,
   dealerName,
+  isGroup,
 }: {
   report: RoutingReport | null
   error: string
   loading: boolean
   dealerName: string
+  isGroup: boolean
 }) {
   if (error) return <p className="error">{error}</p>
   if (!report) return <p className="empty-row">{loading ? 'Loading…' : 'No data.'}</p>
@@ -433,7 +456,7 @@ function RoutingView({
         </p>
       ) : null}
 
-      {report.area ? <AreaFlow area={report.area} name={dealerName} /> : <LeadFlow report={report} />}
+      {report.area ? <AreaFlow area={report.area} name={dealerName} isGroup={isGroup} /> : <LeadFlow report={report} />}
 
       <div className="table-wrap">
         <table>
@@ -561,7 +584,7 @@ function LeadFlow({ report }: { report: RoutingReport }) {
 
 // The same bar for one dealer: the leads inside its radius, split into what it got, what
 // another dealer got, and what nobody got, with why it missed the rest.
-function AreaFlow({ area, name }: { area: DealerArea; name: string }) {
+function AreaFlow({ area, name, isGroup }: { area: DealerArea; name: string; isGroup: boolean }) {
   const share = (n: number) => (area.total ? (n / area.total) * 100 : 0)
   const missed = (Object.keys(MISSED_LABELS) as Array<keyof DealerArea['missed']>).filter((k) => area.missed[k] > 0)
   const parts = [
@@ -625,7 +648,9 @@ function AreaFlow({ area, name }: { area: DealerArea; name: string }) {
       ) : null}
 
       <p className="report-note">
-        “Its area” is every lead inside its radius, plus any repeat customer sent to it from outside.
+        {isGroup
+          ? '“Its area” is every lead inside any of its stores’ radii, plus any repeat customer sent to one of them from outside.'
+          : '“Its area” is every lead inside its radius, plus any repeat customer sent to it from outside.'}
       </p>
     </div>
   )
@@ -699,6 +724,16 @@ function VehiclesView({
             </tr>
           </thead>
           <tbody>
+            {report.group_total ? (
+              <tr className="total-row">
+                <td>{report.group_total.name}</td>
+                <td className="num">{report.group_total.leads}</td>
+                <td className="num">{miles(report.group_total.avg_mileage)}</td>
+                <td className="num">{report.group_total.avg_model_year ?? '—'}</td>
+                <td className="num">{report.group_total.avg_age_years == null ? '—' : `${report.group_total.avg_age_years} yrs`}</td>
+                <td>{report.group_total.top_make ? `${report.group_total.top_make.make} (${report.group_total.top_make.leads}, ${report.group_total.top_make.share}%)` : '—'}</td>
+              </tr>
+            ) : null}
             {report.dealers.map((r) => (
               <tr key={r.slug ?? 'unassigned'}>
                 <td className={r.slug ? '' : 'muted'}>{r.name}</td>

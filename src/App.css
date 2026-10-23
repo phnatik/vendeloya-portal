@@ -1346,3 +1346,8 @@ tr.clickable:hover .link-button {
   margin: 6px 0 0;
   padding-left: 18px;
 }
+
+tr.total-row td {
+  font-weight: 700;
+  background: var(--mint);
+}

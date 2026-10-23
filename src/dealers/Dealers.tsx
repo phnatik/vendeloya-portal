@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { apiGet, apiSend, UnauthorizedError } from '../api'
 import SectionForm, { type Field } from './SectionForm'
 import type { DealerDetail, DealerEvent, DealerListRow, DealerStatus, Recipient } from './types'
+import type { GroupRow } from '../reports/types'
 
 // The Dealers section: the list of every dealer, and a page per dealer where its settings
 // can be changed and it can be switched on or off. Every change goes through the backend's
@@ -68,6 +69,7 @@ export default function Dealers({ token, canEdit, onUnauthorized, selected, onSe
             <thead>
               <tr>
                 <th>Dealer</th>
+                <th>Group</th>
                 <th>Status</th>
                 <th className="num">Radius</th>
                 <th className="num">Leads this month</th>
@@ -85,6 +87,7 @@ export default function Dealers({ token, canEdit, onUnauthorized, selected, onSe
                     </button>
                     <div className="muted">{d.city_state || d.zip_code}</div>
                   </td>
+                  <td className={d.group ? '' : 'muted'}>{d.group ? d.group.name : 'Independent'}</td>
                   <td>
                     <span className={`badge status-${d.status}`}>{STATUS_LABEL[d.status]}</span>
                   </td>
@@ -99,7 +102,7 @@ export default function Dealers({ token, canEdit, onUnauthorized, selected, onSe
               ))}
               {list && !list.length ? (
                 <tr>
-                  <td colSpan={7} className="empty-row">
+                  <td colSpan={8} className="empty-row">
                     No dealers yet. New dealers are added through Onboarding.
                   </td>
                 </tr>
@@ -128,6 +131,7 @@ function DealerPage({
   onError: (e: unknown) => void
 }) {
   const [d, setD] = useState<DealerDetail | null>(null)
+  const [groups, setGroups] = useState<GroupRow[]>([])
   const [version, setVersion] = useState(0)
   const reload = () => setVersion((v) => v + 1)
 
@@ -136,6 +140,9 @@ function DealerPage({
     apiGet<DealerDetail>(`/dealers/${slug}`, token)
       .then((data) => live && setD(data))
       .catch((e) => live && onError(e))
+    apiGet<GroupRow[]>('/groups', token)
+      .then((rows) => live && setGroups(rows))
+      .catch(() => {})
     return () => {
       live = false
     }
@@ -157,6 +164,13 @@ function DealerPage({
 
   const profileFields: Field[] = [
     { key: 'name', label: 'Name', type: 'text' },
+    {
+      key: 'group_id',
+      label: 'Dealer group',
+      type: 'select',
+      options: [{ value: '', label: 'Independent (no group)' }, ...groups.map((g) => ({ value: String(g.id), label: g.name }))],
+      show: () => (d.group ? d.group.name : 'Independent'),
+    },
     { key: 'address', label: 'Street address', type: 'text' },
     { key: 'zip_code', label: 'Rooftop ZIP', type: 'text', help: 'Changing it doesn’t move the routing location; use “Use rooftop ZIP” under Routing.' },
     { key: 'city_state', label: 'City, state (shown to sellers)', type: 'text' },
@@ -205,7 +219,7 @@ function DealerPage({
         <div>
           <h1 className="page-title">{dealer.name}</h1>
           <p className="page-desc">
-            {[dealer.city_state, dealer.crm_vendor && `CRM: ${dealer.crm_vendor}`, dealer.go_live_at && `live since ${when(dealer.go_live_at)}`]
+            {[d.group && `Part of ${d.group.name}`, dealer.city_state, dealer.crm_vendor && `CRM: ${dealer.crm_vendor}`, dealer.go_live_at && `live since ${when(dealer.go_live_at)}`]
               .filter(Boolean)
               .join('. ')}
           </p>

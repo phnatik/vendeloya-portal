@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { apiGet, apiSend, UnauthorizedError } from '../api'
 import SectionForm, { type Field } from '../dealers/SectionForm'
 import type { OnboardingForm, OnboardingStatus, ProcessResult } from './types'
+import type { GroupRow } from '../reports/types'
 
 // Onboarding: every dealer form in progress. A form is started here (New dealer) and either
 // filled in by us, or sent to the dealer as a private link for their part. When it's
@@ -215,6 +216,7 @@ function FormPage({
   onOpenDealer: (slug: string) => void
 }) {
   const [form, setForm] = useState<OnboardingForm | null>(null)
+  const [groups, setGroups] = useState<GroupRow[]>([])
   const [version, setVersion] = useState(0)
   const [link, setLink] = useState('')
   const [check, setCheck] = useState<ProcessResult | null>(null)
@@ -229,6 +231,9 @@ function FormPage({
     apiGet<OnboardingForm>(`/onboarding/${id}`, token)
       .then((f) => live && setForm(f))
       .catch((e) => live && onError(e))
+    apiGet<GroupRow[]>('/groups', token)
+      .then((rows) => live && setGroups(rows))
+      .catch(() => {})
     return () => {
       live = false
     }
@@ -393,7 +398,17 @@ function FormPage({
 
       <div className="section-grid">
         <SectionForm title="From the dealer" description="What the dealer fills in through their link (or you, here)." fields={DEALER_FIELDS} values={form} canEdit={editable} onSave={save} askReason={false} />
-        <SectionForm title="Our settings" description="Only we set these: what leads they get, and how the ADF is shaped." fields={OUR_FIELDS} values={form} canEdit={editable} onSave={save} askReason={false} />
+        <SectionForm title="Our settings" description="Only we set these: what leads they get, and how the ADF is shaped." fields={[
+            OUR_FIELDS[0],
+            {
+              key: 'group_id',
+              label: 'Dealer group',
+              type: 'select',
+              options: [{ value: '', label: 'Independent (no group)' }, ...groups.map((g) => ({ value: String(g.id), label: g.name }))],
+              show: (v) => groups.find((g) => g.id === Number(v))?.name ?? 'Independent',
+            },
+            ...OUR_FIELDS.slice(1),
+          ]} values={form} canEdit={editable} onSave={save} askReason={false} />
       </div>
     </div>
   )

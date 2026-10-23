@@ -6,6 +6,7 @@ import { API_BASE } from './api'
 import Reports from './reports/Reports'
 import Dealers from './dealers/Dealers'
 import Onboarding from './onboarding/Onboarding'
+import Groups from './groups/Groups'
 
 type Lead = {
   id: number
@@ -35,6 +36,8 @@ type Lead = {
   // routing_outcome is null when it was never routed (funnel not finished).
   dealer_slug: string | null
   dealer_name: string | null
+  group_slug: string | null
+  group_name: string | null
   routing_outcome: string | null
   routing_reason: string | null
 }
@@ -172,6 +175,7 @@ const matchesDealerFilter = (lead: Lead, filter: string): boolean => {
   if (filter === 'all') return true
   if (filter === UNASSIGNED) return !lead.dealer_slug && lead.routing_outcome === 'unassigned'
   if (filter === NOT_ROUTED) return !lead.dealer_slug && !lead.routing_outcome
+  if (filter.startsWith('group:')) return lead.group_slug === filter.slice(6)
   return lead.dealer_slug === filter
 }
 
@@ -195,7 +199,9 @@ function App() {
   // 'admin' can change dealers; 'viewer' can only look. The server enforces it either way.
   const [role, setRole] = useState<string>(sessionStorage.getItem(ROLE_KEY) ?? '')
   const isAuthenticated = Boolean(token)
-  const [view, setView] = useState<'leads' | 'reports' | 'dealers' | 'onboarding'>('leads')
+  const [view, setView] = useState<'leads' | 'reports' | 'dealers' | 'groups' | 'onboarding'>('leads')
+  // Reports opened from elsewhere (a group's page) start with that store or group picked.
+  const [reportScope, setReportScope] = useState('')
   // The dealer page open under Dealers (null = the list); Onboarding opens one after Process.
   const [dealerSlug, setDealerSlug] = useState<string | null>(null)
 
@@ -250,8 +256,10 @@ function App() {
     }
   }, [])
 
+  // Loads (and reloads, each time the Leads page is opened) the lead list, so dealer and
+  // group changes made elsewhere in the portal show up here.
   useEffect(() => {
-    if (!token) {
+    if (!token || view !== 'leads') {
       return
     }
 
@@ -301,7 +309,7 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [token, signOutLocally])
+  }, [token, signOutLocally, view])
 
   const states = useMemo(() => {
     return [...new Set(leads.map((lead) => normalize(lead.state)).filter(Boolean))]
@@ -312,6 +320,15 @@ function App() {
     const bySlug = new Map<string, string>()
     leads.forEach((lead) => {
       if (lead.dealer_slug) bySlug.set(lead.dealer_slug, lead.dealer_name || lead.dealer_slug)
+    })
+    return [...bySlug.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [leads])
+
+  // Every dealer group with leads, for the same switcher ("Covert Auto Group (all stores)").
+  const groupOptions = useMemo(() => {
+    const bySlug = new Map<string, string>()
+    leads.forEach((lead) => {
+      if (lead.group_slug) bySlug.set(lead.group_slug, lead.group_name || lead.group_slug)
     })
     return [...bySlug.entries()].sort((a, b) => a[1].localeCompare(b[1]))
   }, [leads])
@@ -771,7 +788,10 @@ function App() {
             type="button"
             className={view === 'reports' ? 'side-link active' : 'side-link'}
             aria-current={view === 'reports' ? 'page' : undefined}
-            onClick={() => setView('reports')}
+            onClick={() => {
+              setReportScope('')
+              setView('reports')
+            }}
           >
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16V9M10 16V4M16 16v-5" /></svg>
             Reports
@@ -787,6 +807,15 @@ function App() {
           >
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17h14M4.5 17V8.5L10 4l5.5 4.5V17M8 17v-4h4v4" /></svg>
             Dealers
+          </button>
+          <button
+            type="button"
+            className={view === 'groups' ? 'side-link active' : 'side-link'}
+            aria-current={view === 'groups' ? 'page' : undefined}
+            onClick={() => setView('groups')}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9h6v8H3zM11 4h6v13h-6z" /></svg>
+            Groups
           </button>
           <button
             type="button"
@@ -809,6 +838,20 @@ function App() {
       <main className="main">
       {view === 'dealers' && token ? (
         <Dealers token={token} canEdit={role === 'admin'} onUnauthorized={signOutLocally} selected={dealerSlug} onSelect={setDealerSlug} />
+      ) : view === 'groups' && token ? (
+        <Groups
+          token={token}
+          canEdit={role === 'admin'}
+          onUnauthorized={signOutLocally}
+          onOpenDealer={(slug) => {
+            setDealerSlug(slug)
+            setView('dealers')
+          }}
+          onOpenReports={(scope) => {
+            setReportScope(scope)
+            setView('reports')
+          }}
+        />
       ) : view === 'onboarding' && token ? (
         <Onboarding
           token={token}
@@ -820,7 +863,7 @@ function App() {
           }}
         />
       ) : view === 'reports' && token ? (
-        <Reports token={token} onUnauthorized={signOutLocally} />
+        <Reports key={reportScope} token={token} onUnauthorized={signOutLocally} initialScope={reportScope} />
       ) : (
       <div className="page">
         <header className="page-head">
@@ -833,6 +876,8 @@ function App() {
                   ? 'Leads no dealer took, with the reason.'
                   : dealerFilter === NOT_ROUTED
                     ? 'Sellers who started the funnel but never reached the contact step.'
+                    : dealerFilter.startsWith('group:')
+                    ? `Leads sent to any ${groupOptions.find(([slug]) => `group:${slug}` === dealerFilter)?.[1] ?? dealerFilter.slice(6)} store.`
                     : `Leads sent to ${dealerOptions.find(([slug]) => slug === dealerFilter)?.[1] ?? dealerFilter}.`}
             </p>
           </div>
@@ -842,11 +887,22 @@ function App() {
               Dealer
               <select value={dealerFilter} onChange={(event) => setDealerFilter(event.target.value)}>
                 <option value="all">All dealers</option>
-                {dealerOptions.map(([slug, name]) => (
-                  <option key={slug} value={slug}>
-                    {name}
-                  </option>
-                ))}
+                {groupOptions.length ? (
+                  <optgroup label="Dealer groups">
+                    {groupOptions.map(([slug, name]) => (
+                      <option key={slug} value={`group:${slug}`}>
+                        {name} (all stores)
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+                <optgroup label="Stores">
+                  {dealerOptions.map(([slug, name]) => (
+                    <option key={slug} value={slug}>
+                      {name}
+                    </option>
+                  ))}
+                </optgroup>
                 <option value={UNASSIGNED}>Unassigned</option>
                 <option value={NOT_ROUTED}>Not routed yet</option>
               </select>
