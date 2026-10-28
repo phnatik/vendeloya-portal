@@ -7,6 +7,7 @@ import Reports from './reports/Reports'
 import Dealers from './dealers/Dealers'
 import Onboarding from './onboarding/Onboarding'
 import Groups from './groups/Groups'
+import Settings from './settings/Settings'
 
 type Lead = {
   id: number
@@ -199,7 +200,7 @@ function App() {
   // 'admin' can change dealers; 'viewer' can only look. The server enforces it either way.
   const [role, setRole] = useState<string>(sessionStorage.getItem(ROLE_KEY) ?? '')
   const isAuthenticated = Boolean(token)
-  const [view, setView] = useState<'leads' | 'reports' | 'dealers' | 'groups' | 'onboarding'>('leads')
+  const [view, setView] = useState<'leads' | 'reports' | 'dealers' | 'groups' | 'onboarding' | 'settings'>('leads')
   // Reports opened from elsewhere (a group's page) start with that store or group picked.
   const [reportScope, setReportScope] = useState('')
   // The dealer page open under Dealers (null = the list); Onboarding opens one after Process.
@@ -826,6 +827,15 @@ function App() {
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>
             Onboarding
           </button>
+          <button
+            type="button"
+            className={view === 'settings' ? 'side-link active' : 'side-link'}
+            aria-current={view === 'settings' ? 'page' : undefined}
+            onClick={() => setView('settings')}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12M4 14h12" /><circle cx="8" cy="6" r="2" /><circle cx="13" cy="14" r="2" /></svg>
+            Settings
+          </button>
         </nav>
         <div className="side-foot">
           <p className="side-user" title={userEmail}>{userEmail || 'Signed in'}</p>
@@ -862,6 +872,8 @@ function App() {
             setView('dealers')
           }}
         />
+      ) : view === 'settings' && token ? (
+        <Settings token={token} canEdit={role === 'admin'} onUnauthorized={signOutLocally} />
       ) : view === 'reports' && token ? (
         <Reports key={reportScope} token={token} onUnauthorized={signOutLocally} initialScope={reportScope} />
       ) : (

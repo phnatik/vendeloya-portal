@@ -12,6 +12,8 @@ export type DealerListRow = {
   crm_vendor: string | null
   go_live_at: string | null
   radius_miles: number | null
+  lat: number | null
+  lng: number | null
   weight: number
   total_cap: number | null
   monthly_cap: number | null

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { apiGet, apiSend, UnauthorizedError } from '../api'
+import DealerMap from './DealerMap'
 import SectionForm, { type Field } from './SectionForm'
 import type { DealerDetail, DealerEvent, DealerListRow, DealerStatus, Recipient } from './types'
 import type { GroupRow } from '../reports/types'
@@ -62,6 +63,8 @@ export default function Dealers({ token, canEdit, onUnauthorized, selected, onSe
       </header>
 
       {error ? <p className="error">{error}</p> : null}
+
+      {list && list.length ? <DealerMap dealers={list} onOpen={setSelected} /> : null}
 
       <section className="table-section">
         <div className="table-wrap">
