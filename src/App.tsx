@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import logo from './assets/vendeloya-logo.png'
 import './App.css'
@@ -70,6 +70,30 @@ const TOKEN_KEY = 'portal-token'
 const USER_KEY = 'portal-user'
 const ROLE_KEY = 'portal-role'
 const MOBILE_BREAKPOINT = 740
+
+// The page you're on lives in the address bar (#/dealers/covert-bastrop, #/reports,
+// #/settings…), so a refresh, a bookmark or a shared link opens the same page, and the
+// browser's Back and Forward work. A hash rather than a real path: it needs no rewrite rule
+// on whatever host serves the portal.
+type View = 'leads' | 'reports' | 'dealers' | 'groups' | 'onboarding' | 'settings'
+const VIEWS: View[] = ['leads', 'reports', 'dealers', 'groups', 'onboarding', 'settings']
+type Place = { view: View; dealerSlug: string | null; reportScope: string }
+
+const placeFromHash = (hash: string): Place => {
+  const [first = '', second = ''] = hash.replace(/^#\/?/, '').split('/')
+  const view = (VIEWS as string[]).includes(first) ? (first as View) : 'leads'
+  const rest = second ? decodeURIComponent(second) : ''
+  return {
+    view,
+    dealerSlug: view === 'dealers' && rest ? rest : null,
+    reportScope: view === 'reports' ? rest : '',
+  }
+}
+
+const hashFor = ({ view, dealerSlug, reportScope }: Place): string => {
+  const rest = view === 'dealers' ? dealerSlug : view === 'reports' ? reportScope : null
+  return `#/${view}${rest ? `/${encodeURIComponent(rest)}` : ''}`
+}
 
 const toNumber = (value: string | null): number | null => {
   if (!value) {
@@ -155,6 +179,7 @@ const UNASSIGNED = '__unassigned'
 const NOT_ROUTED = '__not_routed'
 
 const UNASSIGNED_REASONS: Record<string, string> = {
+  not_in_territory: 'ZIP in no territory',
   out_of_range: 'outside every radius',
   all_capped: 'dealer at cap',
   filtered_out: 'dealer filters',
@@ -200,11 +225,40 @@ function App() {
   // 'admin' can change dealers; 'viewer' can only look. The server enforces it either way.
   const [role, setRole] = useState<string>(sessionStorage.getItem(ROLE_KEY) ?? '')
   const isAuthenticated = Boolean(token)
-  const [view, setView] = useState<'leads' | 'reports' | 'dealers' | 'groups' | 'onboarding' | 'settings'>('leads')
+  const [startPlace] = useState(() => placeFromHash(window.location.hash))
+  const [view, setView] = useState<View>(startPlace.view)
   // Reports opened from elsewhere (a group's page) start with that store or group picked.
-  const [reportScope, setReportScope] = useState('')
+  const [reportScope, setReportScope] = useState(startPlace.reportScope)
   // The dealer page open under Dealers (null = the list); Onboarding opens one after Process.
-  const [dealerSlug, setDealerSlug] = useState<string | null>(null)
+  const [dealerSlug, setDealerSlug] = useState<string | null>(startPlace.dealerSlug)
+
+  // Page -> address bar. Moving between pages adds a history entry (so Back works); the
+  // first visit only tidies the address, without one.
+  const firstSync = useRef(true)
+  useEffect(() => {
+    const next = hashFor({ view, dealerSlug, reportScope })
+    if (window.location.hash !== next) {
+      if (firstSync.current) window.history.replaceState(null, '', next)
+      else window.history.pushState(null, '', next)
+    }
+    firstSync.current = false
+  }, [view, dealerSlug, reportScope])
+
+  // Address bar -> page: Back, Forward, or a link pasted into this tab.
+  useEffect(() => {
+    const onPop = () => {
+      const place = placeFromHash(window.location.hash)
+      setView(place.view)
+      setDealerSlug(place.dealerSlug)
+      setReportScope(place.reportScope)
+    }
+    window.addEventListener('popstate', onPop)
+    window.addEventListener('hashchange', onPop)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      window.removeEventListener('hashchange', onPop)
+    }
+  }, [])
 
   const [leads, setLeads] = useState<Lead[]>([])
   const [isLoading, setIsLoading] = useState(false)

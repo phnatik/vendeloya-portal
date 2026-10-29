@@ -177,7 +177,6 @@ const DEALER_FIELDS: Field[] = [
 
 const OUR_FIELDS: Field[] = [
   { key: 'slug', label: 'Short name (in URLs and reports)', type: 'text', help: 'Lowercase letters, numbers and dashes.' },
-  { key: 'service_radius_miles', label: 'Radius (miles)', type: 'number', help: 'Required before processing.' },
   { key: 'routing_weight', label: 'Priority weight', type: 'number' },
   { key: 'total_cap', label: 'Total cap', type: 'number', help: 'Empty means no cap.' },
   { key: 'monthly_cap', label: 'Monthly cap', type: 'number', help: 'Empty means no cap.' },

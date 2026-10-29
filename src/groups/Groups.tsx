@@ -5,7 +5,7 @@ import type { GroupRow } from '../reports/types'
 import type { DealerListRow } from '../dealers/types'
 
 // Dealer groups (e.g. Covert Auto Group): the parent a set of stores belongs to. Groups
-// are for organizing and reporting only — each store keeps its own radius, caps, filters
+// are for organizing and reporting only — each store keeps its own territory, caps, filters
 // and CRM, and routing never looks at the group.
 
 type Props = {
@@ -221,7 +221,7 @@ function GroupPage({
         <div className="section-head">
           <div>
             <h2>Stores</h2>
-            <p className="muted">Each store keeps its own radius, caps, filters and CRM. Open a store to change those.</p>
+            <p className="muted">Each store keeps its own territory, caps, filters and CRM. Open a store to change those.</p>
           </div>
         </div>
         <div className="table-wrap">

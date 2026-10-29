@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { apiGet, apiSend, UnauthorizedError } from '../api'
 import DealerMap from './DealerMap'
+import TerritoryEditor from './TerritoryEditor'
 import SectionForm, { type Field } from './SectionForm'
 import type { DealerDetail, DealerEvent, DealerListRow, DealerStatus, Recipient } from './types'
 import type { GroupRow } from '../reports/types'
@@ -64,7 +65,7 @@ export default function Dealers({ token, canEdit, onUnauthorized, selected, onSe
 
       {error ? <p className="error">{error}</p> : null}
 
-      {list && list.length ? <DealerMap dealers={list} onOpen={setSelected} /> : null}
+      {list && list.length ? <DealerMap dealers={list} token={token} onOpen={setSelected} onError={handle} /> : null}
 
       <section className="table-section">
         <div className="table-wrap">
@@ -74,7 +75,7 @@ export default function Dealers({ token, canEdit, onUnauthorized, selected, onSe
                 <th>Dealer</th>
                 <th>Group</th>
                 <th>Status</th>
-                <th className="num">Radius</th>
+                <th className="num">ZIPs</th>
                 <th className="num">Leads this month</th>
                 <th className="num">Total cap</th>
                 <th className="num">Monthly cap</th>
@@ -94,7 +95,7 @@ export default function Dealers({ token, canEdit, onUnauthorized, selected, onSe
                   <td>
                     <span className={`badge status-${d.status}`}>{STATUS_LABEL[d.status]}</span>
                   </td>
-                  <td className="num">{d.radius_miles == null ? '—' : `${d.radius_miles} mi`}</td>
+                  <td className={`num ${d.zip_count ? '' : 'at-cap'}`}>{d.zip_count || 'None'}</td>
                   <td className="num">{d.leads_this_month}</td>
                   <td className={`num ${d.total_cap != null && d.leads_total >= d.total_cap ? 'at-cap' : ''}`}>{capText(d.total_cap, d.leads_total)}</td>
                   <td className={`num ${d.monthly_cap != null && d.leads_this_month >= d.monthly_cap ? 'at-cap' : ''}`}>
@@ -175,7 +176,7 @@ function DealerPage({
       show: () => (d.group ? d.group.name : 'Independent'),
     },
     { key: 'address', label: 'Street address', type: 'text' },
-    { key: 'zip_code', label: 'Rooftop ZIP', type: 'text', help: 'Changing it doesn’t move the routing location; use “Use rooftop ZIP” under Routing.' },
+    { key: 'zip_code', label: 'Rooftop ZIP', type: 'text', help: 'Changing it doesn’t move the store on the maps; use “Use rooftop ZIP” under Routing.' },
     { key: 'city_state', label: 'City, state (shown to sellers)', type: 'text' },
     { key: 'public_phone', label: 'Phone (shown to sellers)', type: 'text' },
     { key: 'public_url', label: 'Website (shown to sellers)', type: 'text' },
@@ -183,12 +184,11 @@ function DealerPage({
     { key: 'notes', label: 'Notes', type: 'text' },
   ]
   const routingFields: Field[] = [
-    { key: 'service_radius_miles', label: 'Radius (miles)', type: 'number', help: 'Leads farther than this from the rooftop never go to this dealer.', show: (v) => `${Number(v)} mi` },
-    { key: 'routing_weight', label: 'Priority weight', type: 'number', help: 'Within a distance band, weight 2 gets about twice the leads of weight 1.' },
+    { key: 'routing_weight', label: 'Priority weight', type: 'number', help: 'In a ZIP shared with another dealer, weight 2 gets about twice the leads of weight 1.' },
     { key: 'total_cap', label: 'Total cap', type: 'number', help: 'Lifetime leads. Empty means no cap.', show: (v) => (v == null ? 'No cap' : `${v} (${leads.total} used)`) },
     { key: 'monthly_cap', label: 'Monthly cap', type: 'number', help: 'Leads per calendar month. Empty means no cap.', show: (v) => (v == null ? 'No cap' : `${v} (${leads.this_month} used this month)`) },
-    { key: 'lat', label: 'Latitude', type: 'number' },
-    { key: 'lng', label: 'Longitude', type: 'number' },
+    { key: 'lat', label: 'Store latitude', type: 'number', help: 'Places the store on the maps. Routing goes by ZIP, not distance.' },
+    { key: 'lng', label: 'Store longitude', type: 'number' },
   ]
   const filterFields: Field[] = [
     { key: 'min_model_year_enabled', label: 'Only vehicles this year or newer', type: 'checkbox' },
@@ -231,8 +231,20 @@ function DealerPage({
 
       <StatusPanel d={d} token={token} canEdit={canEdit} onChanged={reload} onError={onError} />
 
+      <TerritoryEditor
+        key={dealer.slug}
+        slug={dealer.slug}
+        dealerName={dealer.name}
+        territory={d.territory}
+        home={routing.lat != null && routing.lng != null ? { lat: Number(routing.lat), lng: Number(routing.lng) } : null}
+        token={token}
+        canEdit={canEdit}
+        onSaved={reload}
+        onError={onError}
+      />
+
       <div className="section-grid">
-        <SectionForm title="Routing" description="Which leads can reach this dealer." fields={routingFields} values={routing} canEdit={canEdit}
+        <SectionForm title="Routing" description="Caps, rotation weight and where the store is." fields={routingFields} values={routing} canEdit={canEdit}
           onSave={save('routing')}
           extraActions={
             <button type="button" className="btn btn-quiet" onClick={() => save('routing')({ use_zip_location: true }, 'location reset to rooftop ZIP').catch(() => {})}>
@@ -240,7 +252,7 @@ function DealerPage({
             </button>
           }
         />
-        <SectionForm title="Filters" description="Leads this dealer won’t take, even inside its radius." fields={filterFields} values={filters} canEdit={canEdit} onSave={save('filters')} />
+        <SectionForm title="Filters" description="Leads this dealer won’t take, even from its own ZIPs." fields={filterFields} values={filters} canEdit={canEdit} onSave={save('filters')} />
         <SectionForm title="Dealer details" description="Who they are and what sellers are shown." fields={profileFields} values={dealer} canEdit={canEdit} onSave={save('profile')} />
         <SectionForm title="ADF format" description="How the lead email to their CRM is shaped." fields={adfFields} values={adf} canEdit={canEdit} onSave={save('adf')} />
       </div>
@@ -351,6 +363,9 @@ function Recipients({ d, token, canEdit, onChanged, onError }: { d: DealerDetail
   const [email, setEmail] = useState('')
   const [kind, setKind] = useState<Recipient['kind']>('crm_ingest')
   const [error, setError] = useState('')
+  // The row being edited, and its draft values.
+  const [editId, setEditId] = useState<number | null>(null)
+  const [draft, setDraft] = useState<{ email: string; kind: Recipient['kind']; reason: string }>({ email: '', kind: 'crm_ingest', reason: '' })
 
   const run = async (fn: () => Promise<unknown>) => {
     setError('')
@@ -368,6 +383,18 @@ function Recipients({ d, token, canEdit, onChanged, onError }: { d: DealerDetail
   const add = async (event: FormEvent) => {
     event.preventDefault()
     if (await run(() => apiSend('POST', `/dealers/${d.dealer.slug}/recipients`, token, { email, kind }))) setEmail('')
+  }
+
+  const startEdit = (r: Recipient) => {
+    setError('')
+    setEditId(r.id)
+    setDraft({ email: r.email, kind: r.kind, reason: '' })
+  }
+
+  const saveEdit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (editId == null) return
+    if (await run(() => apiSend('PATCH', `/dealers/${d.dealer.slug}/recipients/${editId}`, token, draft))) setEditId(null)
   }
 
   return (
@@ -389,24 +416,60 @@ function Recipients({ d, token, canEdit, onChanged, onError }: { d: DealerDetail
             </tr>
           </thead>
           <tbody>
-            {d.recipients.map((r) => (
-              <tr key={r.id}>
-                <td className={r.active ? '' : 'muted'}>{r.email}</td>
-                <td>{KIND_LABEL[r.kind]}</td>
-                <td>{r.active ? <span className="badge good">On</span> : <span className="badge">Off</span>}</td>
-                {canEdit ? (
-                  <td className="num">
-                    <button
-                      type="button"
-                      className="btn btn-quiet"
-                      onClick={() => run(() => apiSend('PATCH', `/dealers/${d.dealer.slug}/recipients/${r.id}`, token, { active: !r.active }))}
-                    >
-                      {r.active ? 'Switch off' : 'Switch on'}
-                    </button>
+            {d.recipients.map((r) =>
+              editId === r.id ? (
+                <tr key={r.id}>
+                  <td colSpan={4}>
+                    <form className="inline-form recipient-edit" onSubmit={saveEdit}>
+                      <label>
+                        <span>Address</span>
+                        <input id={`recipient-email-${r.id}`} type="email" required value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
+                      </label>
+                      <label>
+                        <span>Used for</span>
+                        <select id={`recipient-kind-${r.id}`} value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as Recipient['kind'] })}>
+                          <option value="crm_ingest">CRM</option>
+                          <option value="backup">Backup</option>
+                          <option value="test">Test inbox</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Reason (saved in the activity log)</span>
+                        <input id={`recipient-reason-${r.id}`} type="text" value={draft.reason} onChange={(e) => setDraft({ ...draft, reason: e.target.value })} placeholder="e.g. dealer gave us a new CRM address" />
+                      </label>
+                      <button type="submit" className="btn btn-primary">
+                        Save
+                      </button>
+                      <button type="button" className="btn btn-quiet" onClick={() => setEditId(null)}>
+                        Cancel
+                      </button>
+                    </form>
                   </td>
-                ) : null}
-              </tr>
-            ))}
+                </tr>
+              ) : (
+                <tr key={r.id}>
+                  <td className={r.active ? '' : 'muted'}>{r.email}</td>
+                  <td>{KIND_LABEL[r.kind]}</td>
+                  <td>{r.active ? <span className="badge good">On</span> : <span className="badge">Off</span>}</td>
+                  {canEdit ? (
+                    <td className="num">
+                      <div className="row-actions">
+                        <button type="button" className="btn btn-quiet" onClick={() => startEdit(r)}>
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-quiet"
+                          onClick={() => run(() => apiSend('PATCH', `/dealers/${d.dealer.slug}/recipients/${r.id}`, token, { active: !r.active }))}
+                        >
+                          {r.active ? 'Switch off' : 'Switch on'}
+                        </button>
+                      </div>
+                    </td>
+                  ) : null}
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       </div>
@@ -537,14 +600,19 @@ const EVENT_LABEL: Record<string, string> = {
   adf_config_changed: 'ADF format changed',
   recipients_changed: 'Addresses changed',
   contacts_changed: 'People changed',
+  territory_changed: 'Territory changed',
   cap_hit: 'Reached a cap',
 }
 
-// "radius 25 → 30, total cap 100 → 120" from an event's detail.
+// "total cap 100 → 120", "added 78602, 78612" from an event's detail.
 const describe = (e: DealerEvent): string => {
   const detail = (typeof e.detail === 'string' ? JSON.parse(e.detail) : e.detail) as Record<string, unknown> | null
   if (!detail) return ''
   if (e.event === 'status_changed') return `${detail.from} → ${detail.to}`
+  if (e.event === 'territory_changed') {
+    const list = (k: string) => ((detail[k] as string[] | undefined) ?? [])
+    return [list('added').length && `added ${list('added').join(', ')}`, list('removed').length && `removed ${list('removed').join(', ')}`].filter(Boolean).join('; ')
+  }
   if (detail.changes && typeof detail.changes === 'object') {
     return Object.entries(detail.changes as Record<string, { from: unknown; to: unknown }>)
       .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v.from ?? '—'} → ${v.to ?? '—'}`)

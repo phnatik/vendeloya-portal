@@ -3,7 +3,7 @@ import { apiGet, apiSend, UnauthorizedError } from '../api'
 import SectionForm, { type Field } from '../dealers/SectionForm'
 import type { DealerEvent, DealerStatus } from '../dealers/types'
 
-// Global settings (system_settings): the routing switch, the distance bands, the default
+// Global settings (system_settings): the routing switch, the default
 // dealer, and who our emails come from. Any login can look; the admin role changes them.
 // Every change is logged with who and why, like dealer changes.
 
@@ -87,8 +87,6 @@ export default function Settings({ token, canEdit, onUnauthorized }: Props) {
       help: 'Gets every lead while routing is off or in shadow.',
       show: (v) => view.dealers.find((d) => String(d.id) === String(v))?.name ?? '—',
     },
-    { key: 'band_near_miles', label: 'Near band (miles)', type: 'number', help: 'Dealers this close compete first.' },
-    { key: 'band_far_miles', label: 'Far band (miles)', type: 'number', help: 'Then dealers up to this far; beyond it, the rest.' },
     { key: 'default_test_recipient', label: 'Our test inbox', type: 'text', help: 'Added to every new dealer as a test address.' },
   ]
 
@@ -120,7 +118,7 @@ export default function Settings({ token, canEdit, onUnauthorized }: Props) {
       <RoutingPanel view={view} token={token} canEdit={canEdit} onChanged={reload} onError={handle} />
 
       <div className="section-grid">
-        <SectionForm title="Routing" description="The default dealer and the distance bands." fields={routingFields} values={view.settings} canEdit={canEdit} onSave={save} />
+        <SectionForm title="Routing" description="The default dealer and our test inbox." fields={routingFields} values={view.settings} canEdit={canEdit} onSave={save} />
         <SectionForm title="Emails and ADF" description="Who our emails come from, and which templates they use." fields={emailFields} values={view.settings} canEdit={canEdit} onSave={save} />
       </div>
 

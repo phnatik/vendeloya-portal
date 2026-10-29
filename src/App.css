@@ -1382,7 +1382,15 @@ tr.total-row td {
   height: 460px;
   border-radius: var(--radius-s);
   border: 1px solid var(--line);
+  overflow: hidden;
+  position: relative;
   z-index: 0; /* keep Leaflet's panes under the sidebar and dialogs */
+}
+
+/* Leaflet's own element: it sets its classes on this one, so React never touches them. */
+.map-fill {
+  height: 100%;
+  width: 100%;
 }
 
 .map-legend {
@@ -1451,4 +1459,91 @@ tr.total-row td {
   .dealer-map {
     height: 340px;
   }
+}
+
+/* Territory editor (dealer page) */
+.territory-map {
+  height: 520px;
+}
+
+.territory-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  align-items: flex-end;
+}
+
+/* Two small forms side by side: no divider line, and the miles box stays narrow. */
+.territory-tools .inline-form {
+  padding-top: 0;
+  border-top: none;
+  flex: 1 1 320px;
+  flex-wrap: nowrap;
+}
+
+.territory-tools .inline-form label:has(input[type='number']) {
+  flex: 0 0 120px;
+}
+
+.zip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.zip-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--mint);
+  color: var(--green-dark);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.zip-chip-shared {
+  background: var(--gold-soft);
+  color: #8a5a00;
+}
+
+.zip-chip-new {
+  border-style: dashed;
+  border-color: var(--forest);
+}
+
+.zip-chip-x {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+@media (max-width: 740px) {
+  .territory-map {
+    height: 380px;
+  }
+}
+
+/* "Expand map": most of the window, on any map. Comes after the default heights so it wins. */
+.dealer-map.map-big {
+  height: calc(100vh - 120px);
+  min-height: 420px;
+}
+
+/* Dealer addresses: Edit and Switch off side by side; the edit form sits in its row. */
+.row-actions {
+  display: inline-flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.recipient-edit {
+  padding-top: 0;
+  border-top: none;
 }

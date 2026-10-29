@@ -1,187 +1,220 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { apiGet } from '../api'
+import { loadShapes, type ZipFeature } from './zipShapes'
 import type { DealerListRow, DealerStatus } from './types'
 
-// Every dealer's location and radius on a street map, plus the pairs whose radii
-// overlap. Locations are where routing measures from (dealer_routing.lat/lng: the rooftop
-// if one was entered, otherwise the centre of the rooftop ZIP), so what you see here is
-// exactly what routing uses.
-//
-// Colour shows status only (active / testing / inactive); each dealer is named on the map,
-// so identity never depends on colour.
+// Every dealer's territory on one map: each store's ZIPs in its own colour, shared ZIPs
+// (leads from them rotate) in grey with a dashed edge, and each store's location. Below
+// it, the shared ZIPs listed out. Dealers are also named on their pins, in the legend and
+// in each ZIP's tooltip, so identity never depends on colour alone.
 
-const MILE = 1609.344
-const COLOR: Record<DealerStatus, string> = { active: '#0d7a52', testing: '#b07800', inactive: '#82948b' }
-const STATUS_LABEL: Record<DealerStatus, string> = { active: 'Active', testing: 'Testing', inactive: 'Inactive' }
+type Owner = { slug: string; name: string; status: DealerStatus }
+type TerritoryRow = { zip: string; has_location: boolean; owners: Owner[] }
 
-// Same formula as the backend router (modules/routing/router.js), so distances match.
-const milesBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
-  const R = 3958.8
-  const rad = (x: number) => (x * Math.PI) / 180
-  const dLat = rad(b.lat - a.lat)
-  const dLng = rad(b.lng - a.lng)
-  const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2
-  return 2 * R * Math.asin(Math.sqrt(s))
-}
-
-type Placed = DealerListRow & { lat: number; lng: number; radius_miles: number }
+// Categorical colours in fixed order (colour-blind checked), light values because the map
+// tiles are light in either theme. A store's colour comes from its place in creation order
+// (dealer id), so it never changes when other stores are added, hidden or filtered. Past
+// eight stores the rest share OTHER; the pins and tooltips still name them.
+const PALETTE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948']
+const OTHER = '#5f6f68'
+const SHARED = { fill: '#9aa9a1', edge: '#3d4a44' }
 
 type Props = {
   dealers: DealerListRow[]
+  token: string
   onOpen: (slug: string) => void
+  onError: (e: unknown) => void
 }
 
-export default function DealerMap({ dealers, onOpen }: Props) {
+export default function DealerMap({ dealers, token, onOpen, onError }: Props) {
   const [showInactive, setShowInactive] = useState(false)
+  const [rows, setRows] = useState<TerritoryRow[]>([])
   const el = useRef<HTMLDivElement | null>(null)
   const map = useRef<L.Map | null>(null)
-  const layer = useRef<L.LayerGroup | null>(null)
+  const zipLayer = useRef<L.GeoJSON | null>(null)
+  const pins = useRef<L.LayerGroup | null>(null)
 
-  const placed = useMemo(
-    () =>
-      dealers.filter(
-        (d): d is Placed => d.lat != null && d.lng != null && d.radius_miles != null && (showInactive || d.status !== 'inactive'),
-      ),
-    [dealers, showInactive],
-  )
-  const hiddenInactive = dealers.filter((d) => d.status === 'inactive').length
+  // Expand: a taller map. Leaflet measures its box once, so tell it the box changed.
+  const [big, setBig] = useState(false)
+  useEffect(() => {
+    map.current?.invalidateSize()
+  }, [big])
 
-  // Pairs of dealers whose radii touch, closest first.
-  const overlaps = useMemo(() => {
-    const out: Array<{ a: Placed; b: Placed; miles: number; inside: Placed[] }> = []
-    for (let i = 0; i < placed.length; i += 1) {
-      for (let j = i + 1; j < placed.length; j += 1) {
-        const a = placed[i]
-        const b = placed[j]
-        const miles = milesBetween(a, b)
-        if (miles < a.radius_miles + b.radius_miles) {
-          // whose location sits inside the other's radius
-          const inside = [miles <= a.radius_miles ? b : null, miles <= b.radius_miles ? a : null].filter((x): x is Placed => x !== null)
-          out.push({ a, b, miles, inside })
-        }
-      }
+  useEffect(() => {
+    let live = true
+    apiGet<TerritoryRow[]>('/dealers/territories', token)
+      .then((r) => live && setRows(r))
+      .catch((e) => live && onError(e))
+    return () => {
+      live = false
     }
-    return out.sort((x, y) => x.miles - y.miles)
-  }, [placed])
+  }, [token, dealers, onError])
 
-  // The map itself, created once.
+  // ZIP -> owners shown (inactive dealers hidden unless asked for).
+  const owners = useMemo(() => {
+    const m = new Map<string, Owner[]>()
+    for (const r of rows) {
+      const shown = r.owners.filter((o) => showInactive || o.status !== 'inactive')
+      if (shown.length) m.set(r.zip, shown)
+    }
+    return m
+  }, [rows, showInactive])
+  const shared = useMemo(() => [...owners.entries()].filter(([, o]) => o.length > 1).sort(([a], [b]) => a.localeCompare(b)), [owners])
+  const offMap = rows.filter((r) => !r.has_location)
+  const hiddenInactive = dealers.filter((d) => d.status === 'inactive').length
+  const colorOf = useMemo(() => {
+    const byId = [...dealers].sort((a, b) => a.id - b.id)
+    return new Map(byId.map((d, i) => [d.slug, PALETTE[i] ?? OTHER]))
+  }, [dealers])
+  const legendDealers = [...dealers].sort((a, b) => a.id - b.id).filter((d) => showInactive || d.status !== 'inactive')
+
+  const latest = useRef({ owners, colorOf })
+  useEffect(() => {
+    latest.current = { owners, colorOf }
+  }, [owners, colorOf])
+
+  const styleFor = (zip: string): L.PathOptions => {
+    const o = latest.current.owners.get(zip)
+    if (!o) return { stroke: false, fillOpacity: 0, interactive: false } as L.PathOptions
+    if (o.length > 1) return { color: SHARED.edge, weight: 1.5, opacity: 0.9, dashArray: '4 3', fillColor: SHARED.fill, fillOpacity: 0.55 }
+    const color = latest.current.colorOf.get(o[0].slug) ?? OTHER
+    return { color, weight: 1, opacity: 0.8, dashArray: undefined, fillColor: color, fillOpacity: 0.4 }
+  }
+
+  // Frame every owned ZIP, or failing that every store.
+  const fit = () => {
+    const m = map.current
+    if (!m) return
+    const owned = L.featureGroup()
+    zipLayer.current?.eachLayer((l) => {
+      if (latest.current.owners.has(((l as L.GeoJSON).feature as ZipFeature).properties.zip)) owned.addLayer(l)
+    })
+    pins.current?.eachLayer((l) => owned.addLayer(L.marker((l as L.CircleMarker).getLatLng())))
+    if (owned.getLayers().length) m.fitBounds(owned.getBounds(), { padding: [24, 24], maxZoom: 11 })
+  }
+
+  // The map, created once; ZIP shapes added when loaded.
   useEffect(() => {
     if (!el.current || map.current) return
-    map.current = L.map(el.current, { scrollWheelZoom: false, attributionControl: true }).setView([30.27, -97.74], 9)
+    const m = L.map(el.current, { scrollWheelZoom: true, wheelPxPerZoomLevel: 120, preferCanvas: true }).setView([30.27, -97.74], 9)
+    map.current = m
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 18,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map.current)
-    layer.current = L.layerGroup().addTo(map.current)
+    }).addTo(m)
+    pins.current = L.layerGroup().addTo(m)
+    let cancelled = false
+    loadShapes()
+      .then((fc) => {
+        if (cancelled) return
+        zipLayer.current = L.geoJSON(fc, {
+          style: (f) => styleFor((f as ZipFeature).properties.zip),
+          onEachFeature: (f, layer) => {
+            const zip = (f as ZipFeature).properties.zip
+            layer.bindTooltip(() => {
+              const o = latest.current.owners.get(zip) ?? []
+              return `<strong>${zip}</strong><br>${o.map((x) => x.name).join(', ')}${o.length > 1 ? ' (rotates)' : ''}`
+            }, { sticky: true })
+            layer.on('click', () => {
+              const o = latest.current.owners.get(zip)
+              if (o && o.length === 1) onOpen(o[0].slug)
+            })
+          },
+        }).addTo(m)
+        fit()
+      })
+      .catch((e) => onError(e))
     return () => {
-      map.current?.remove()
+      cancelled = true
+      m.remove()
       map.current = null
+      zipLayer.current = null
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- built once; later changes restyle below
   }, [])
 
-  // Circles and pins, redrawn when the dealers or the inactive toggle change.
+  // Repaint ZIPs and redraw store pins when the data or the toggle changes.
   useEffect(() => {
-    const m = map.current
-    const group = layer.current
-    if (!m || !group) return
-    group.clearLayers()
-    const bounds: L.LatLngBounds[] = []
-    for (const d of placed) {
-      const color = COLOR[d.status]
-      const circle = L.circle([d.lat, d.lng], {
-        radius: d.radius_miles * MILE,
-        color,
-        weight: 2,
-        opacity: 0.8,
-        fillColor: color,
-        fillOpacity: 0.1,
-        dashArray: d.status === 'active' ? undefined : '6 6',
-      })
-        .bindTooltip(`${d.name}: ${d.radius_miles} mi radius`, { sticky: true })
-        .on('click', () => onOpen(d.slug))
-      const pin = L.circleMarker([d.lat, d.lng], { radius: 7, color: '#ffffff', weight: 2, fillColor: color, fillOpacity: 1 })
-        .bindTooltip(d.name, { permanent: true, direction: 'right', offset: [10, 0], className: 'map-label' })
-        .on('click', () => onOpen(d.slug))
-      group.addLayer(circle)
-      group.addLayer(pin)
-      bounds.push(circle.getBounds())
+    zipLayer.current?.eachLayer((l) => (l as L.Path).setStyle(styleFor(((l as L.GeoJSON).feature as ZipFeature).properties.zip)))
+    const group = pins.current
+    if (group) {
+      group.clearLayers()
+      for (const d of dealers) {
+        if (d.lat == null || d.lng == null || (!showInactive && d.status === 'inactive')) continue
+        L.circleMarker([d.lat, d.lng], { radius: 8, color: '#ffffff', weight: 2.5, fillColor: colorOf.get(d.slug) ?? OTHER, fillOpacity: 1 })
+          .bindTooltip(`${d.name} · ${d.zip_count} ZIPs${d.status === 'active' ? '' : ` (${d.status})`}`, { permanent: true, direction: 'right', offset: [10, 0], className: 'map-label' })
+          .on('click', () => onOpen(d.slug))
+          .addTo(group)
+      }
     }
-    if (bounds.length) {
-      const all = bounds.reduce((acc, b) => acc.extend(b), L.latLngBounds(bounds[0].getSouthWest(), bounds[0].getNorthEast()))
-      m.fitBounds(all, { padding: [24, 24] })
-    }
-  }, [placed, onOpen])
+    fit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- styleFor/fit read refs
+  }, [owners, dealers, showInactive, colorOf])
 
   return (
     <section className="panel section-card map-card">
       <div className="section-head">
         <div>
-          <h2>Map</h2>
-          <p className="muted">
-            Each dealer’s location and radius, where routing measures from. Click a dealer to open it.
-          </p>
+          <h2>Territories</h2>
+          <p className="muted">Which ZIP codes each dealer gets leads from. Hover a ZIP to see its owners; click a dealer to open it. Scroll to zoom.</p>
         </div>
         <div className="map-legend" aria-label="Legend">
-          {(['active', 'testing', 'inactive'] as DealerStatus[])
-            .filter((s) => s !== 'inactive' || showInactive)
-            .map((s) => (
-              <span key={s} className="map-legend-item">
-                <span className={`map-swatch map-swatch-${s}`} aria-hidden="true" />
-                {STATUS_LABEL[s]}
-              </span>
-            ))}
+          {legendDealers.map((d) => (
+            <span key={d.slug} className="map-legend-item">
+              <span className="map-swatch" style={{ color: colorOf.get(d.slug) ?? OTHER, background: colorOf.get(d.slug) ?? OTHER }} aria-hidden="true" />
+              {d.name}
+            </span>
+          ))}
+          <span className="map-legend-item"><span className="map-swatch" style={{ color: SHARED.edge, background: SHARED.fill, borderStyle: 'dashed' }} aria-hidden="true" />Shared (rotates)</span>
           {hiddenInactive ? (
             <label className="map-toggle">
               <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
-              Show inactive ({hiddenInactive})
+              Include inactive ({hiddenInactive})
             </label>
           ) : null}
+          <button type="button" className="btn btn-secondary" aria-pressed={big} onClick={() => setBig((v) => !v)}>
+            {big ? 'Shrink map' : 'Expand map'}
+          </button>
         </div>
       </div>
 
-      <div ref={el} className="dealer-map" role="region" aria-label="Map of dealer locations and radii" />
+      <div className={`dealer-map${big ? ' map-big' : ''}`}>
+        <div ref={el} className="map-fill" role="region" aria-label="Map of dealer territories" />
+      </div>
 
       <div className="map-pairs">
-        <h3>Where radii overlap</h3>
-        {overlaps.length ? (
+        <h3>Shared ZIPs</h3>
+        {shared.length ? (
           <div className="table-wrap">
             <table className="compact">
               <thead>
                 <tr>
-                  <th>Dealers</th>
-                  <th className="num">Apart</th>
-                  <th className="num">Radii</th>
-                  <th>What it means</th>
+                  <th>ZIP</th>
+                  <th>Dealers (leads rotate between them)</th>
                 </tr>
               </thead>
               <tbody>
-                {overlaps.map(({ a, b, miles, inside }) => (
-                  <tr key={`${a.slug}-${b.slug}`}>
-                    <td>
-                      {a.name} and {b.name}
-                    </td>
-                    <td className="num">{miles.toFixed(1)} mi</td>
-                    <td className="num">
-                      {a.radius_miles} + {b.radius_miles} mi
-                    </td>
-                    <td>
-                      {inside.length
-                        ? inside.map((x) => `${x.name} is inside ${x === a ? b.name : a.name}’s radius`).join('; ')
-                        : `Radii overlap by ${(a.radius_miles + b.radius_miles - miles).toFixed(1)} mi`}
-                      .
-                    </td>
+                {shared.map(([zip, o]) => (
+                  <tr key={zip}>
+                    <td>{zip}</td>
+                    <td>{o.map((x) => x.name).join(', ')}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="muted">No two dealers’ radii overlap.</p>
+          <p className="muted">No ZIP belongs to more than one dealer.</p>
         )}
+        {offMap.length ? (
+          <p className="muted map-note">
+            Owned but not on the map (PO-box or new ZIPs): {offMap.map((r) => `${r.zip} (${r.owners.map((o) => o.name).join(', ')})`).join('; ')}.
+          </p>
+        ) : null}
         <p className="muted map-note">
-          Overlap alone doesn’t mean two dealers share leads. Routing gives a lead to the dealer in the closest distance band
-          (the bands are on the Settings page); dealers only take turns when they land in the same band.
+          A lead goes to the dealer that owns its ZIP. A shared ZIP rotates between its owners, counted per ZIP per month. A ZIP nobody owns is left unassigned.
         </p>
       </div>
     </section>

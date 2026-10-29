@@ -3,6 +3,7 @@
 export type DealerStatus = 'inactive' | 'testing' | 'active'
 
 export type DealerListRow = {
+  id: number
   slug: string
   name: string
   status: DealerStatus
@@ -11,7 +12,7 @@ export type DealerListRow = {
   zip_code: string
   crm_vendor: string | null
   go_live_at: string | null
-  radius_miles: number | null
+  zip_count: number
   lat: number | null
   lng: number | null
   weight: number
@@ -45,7 +46,8 @@ export type DealerDetail = {
     go_live_at: string | null
   }
   group: { id: number; slug: string; name: string } | null
-  routing: { lat: string; lng: string; service_radius_miles: string; routing_weight: number; total_cap: number | null; monthly_cap: number | null }
+  routing: { lat: string | null; lng: string | null; routing_weight: number; total_cap: number | null; monthly_cap: number | null }
+  territory: string[]
   filters: {
     min_model_year_enabled: number
     min_model_year: number | null

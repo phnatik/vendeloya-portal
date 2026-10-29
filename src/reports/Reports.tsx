@@ -21,7 +21,7 @@ import {
 // One date range (empty = this month so far) and one dealer picker apply to every view.
 // The picker holds a store ("<slug>") or a whole dealer group ("group:<slug>").
 // With a dealer picked, Routing shows that dealer's area, Unassigned shows the leads in
-// its radius nobody took, and Deliveries shows what it was sent.
+// its ZIPs nobody took, and Deliveries shows what it was sent.
 
 type Tab = 'routing' | 'unassigned' | 'deliveries' | 'vehicles'
 
@@ -257,7 +257,7 @@ export default function Reports({ token, onUnauthorized, initialScope = '' }: Pr
                 {unassigned.loading
                   ? 'Loading…'
                   : dealer
-                    ? `${(unassigned.data?.leads.length ?? 0).toLocaleString()} lead(s) inside ${isGroup ? `any ${dealerName} store’s radius` : `${dealerName}’s radius`} that no dealer was sent.`
+                    ? `${(unassigned.data?.leads.length ?? 0).toLocaleString()} lead(s) from ${isGroup ? `any ${dealerName} store’s ZIPs` : `${dealerName}’s ZIPs`} that no dealer was sent.`
                     : `${(unassigned.data?.leads.length ?? 0).toLocaleString()} unassigned lead(s). No dealer was sent these.`}
               </p>
               <div className="meta-actions">
@@ -268,10 +268,10 @@ export default function Reports({ token, onUnauthorized, initialScope = '' }: Pr
                   onClick={() =>
                     downloadCsv(
                       'unassigned-leads.csv',
-                      ['Lead', 'Date', 'Reason', 'Customer', 'Email', 'Phone', 'ZIP', 'Vehicle', 'Estimate', 'Nearest dealer', 'Miles', 'Its radius'],
+                      ['Lead', 'Date', 'Reason', 'Customer', 'Email', 'Phone', 'ZIP', 'Vehicle', 'Estimate', 'ZIP owner', 'Miles', 'Why not'],
                       (unassigned.data?.leads ?? []).map((l) => [
                         l.lead_id, l.created_at, reasonLabel(l.reason), l.customer, l.email, l.phone, l.zip, l.vehicle, l.estimate,
-                        l.nearest_dealer?.slug ?? null, l.nearest_dealer?.distance_miles ?? null, l.nearest_dealer?.radius_miles ?? null,
+                        l.nearest_dealer?.slug ?? null, l.nearest_dealer?.distance_miles ?? null, l.nearest_dealer?.why_not ?? null,
                       ]),
                     )
                   }
@@ -291,7 +291,7 @@ export default function Reports({ token, onUnauthorized, initialScope = '' }: Pr
                     <th>Vehicle</th>
                     <th>ZIP</th>
                     <th>Estimate</th>
-                    <th>Nearest dealer</th>
+                    <th>ZIP owner</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -313,12 +313,13 @@ export default function Reports({ token, onUnauthorized, initialScope = '' }: Pr
                         {l.nearest_dealer ? (
                           <>
                             <div>
-                              {l.nearest_dealer.slug}, {l.nearest_dealer.distance_miles} mi away
+                              {l.nearest_dealer.slug}
+                              {l.nearest_dealer.distance_miles == null ? '' : `, ${l.nearest_dealer.distance_miles} mi away`}
                             </div>
                             <div className="muted">
                               {l.nearest_dealer.why_not
                                 ? `${l.nearest_dealer.why_not[0].toUpperCase()}${l.nearest_dealer.why_not.slice(1)}`
-                                : `Radius ${l.nearest_dealer.radius_miles} mi`}
+                                : '—'}
                             </div>
                           </>
                         ) : (
@@ -467,7 +468,7 @@ function RoutingView({
               <th className="num">Leads</th>
               <th className="num">Repeat customers</th>
               <th>Avg distance</th>
-              <th>Radius</th>
+              <th>ZIPs</th>
               <th>Total cap</th>
               <th>Monthly cap</th>
               {report.shadow ? null : <th className="num">Delivered to CRM</th>}
@@ -487,7 +488,7 @@ function RoutingView({
                 <td className="num">{d.leads.total}</td>
                 <td className="num">{d.leads.sticky}</td>
                 <td>{d.avg_distance_miles == null ? '—' : `${d.avg_distance_miles} mi`}</td>
-                <td>{d.radius_miles == null ? '—' : `${d.radius_miles} mi`}</td>
+                <td className={d.zip_count ? '' : 'at-cap'}>{d.zip_count || 'None'}</td>
                 <td className={d.caps.total && d.caps.total.remaining === 0 ? 'at-cap' : ''}>{capText(d.caps.total)}</td>
                 <td className={d.caps.monthly && d.caps.monthly.remaining === 0 ? 'at-cap' : ''}>{capText(d.caps.monthly)}</td>
                 {d.delivery ? <td className="num">{d.delivery.leads_delivered}</td> : null}
@@ -582,7 +583,7 @@ function LeadFlow({ report }: { report: RoutingReport }) {
   )
 }
 
-// The same bar for one dealer: the leads inside its radius, split into what it got, what
+// The same bar for one dealer: the leads from its ZIPs, split into what it got, what
 // another dealer got, and what nobody got, with why it missed the rest.
 function AreaFlow({ area, name, isGroup }: { area: DealerArea; name: string; isGroup: boolean }) {
   const share = (n: number) => (area.total ? (n / area.total) * 100 : 0)
@@ -649,8 +650,8 @@ function AreaFlow({ area, name, isGroup }: { area: DealerArea; name: string; isG
 
       <p className="report-note">
         {isGroup
-          ? '“Its area” is every lead inside any of its stores’ radii, plus any repeat customer sent to one of them from outside.'
-          : '“Its area” is every lead inside its radius, plus any repeat customer sent to it from outside.'}
+          ? '“Its area” is every lead from any of its stores’ ZIPs, plus any repeat customer sent to one of them from elsewhere.'
+          : '“Its area” is every lead from its ZIPs, plus any repeat customer sent to it from elsewhere.'}
       </p>
     </div>
   )
