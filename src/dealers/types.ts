@@ -57,7 +57,7 @@ export type DealerDetail = {
     in_state: string | null
     suppress_inspection: number
   }
-  adf: { vehicle_interest: string; lead_type: string | null; provider_service: string; subject: string; vendor_email: string | null; mileage_in_comments: number }
+  adf: { vehicle_interest: string; lead_type: string | null; provider_service: string; subject: string; vendor_email: string | null; mileage_in_comments: number; estimate_as_price: number; estimate_price_type: string }
   recipients: Recipient[]
   contacts: Contact[]
   events: DealerEvent[]

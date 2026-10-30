@@ -211,6 +211,19 @@ function DealerPage({
     { key: 'subject', label: 'Email subject', type: 'text', help: 'Some CRMs match on this exact text.' },
     { key: 'vendor_email', label: 'Dealer email inside the ADF', type: 'text', help: 'Empty uses the CRM address.' },
     { key: 'mileage_in_comments', label: 'Repeat mileage in the comments', type: 'checkbox' },
+    {
+      key: 'estimate_as_price',
+      label: 'Send the estimate as a structured value',
+      type: 'checkbox',
+      help: 'For CRMs that fill their value field only from the ADF <price>. The range is in the comments either way.',
+    },
+    {
+      key: 'estimate_price_type',
+      label: 'Value type',
+      type: 'select',
+      options: ['appraisal', 'offer', 'quote', 'asking', 'msrp', 'invoice', 'call'].map((v) => ({ value: v, label: v })),
+      help: 'Which ADF price type the CRM reads into its value field.',
+    },
   ]
 
   return (
