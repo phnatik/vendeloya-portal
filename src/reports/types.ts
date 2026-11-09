@@ -44,6 +44,8 @@ export type UnassignedLead = {
   email: string | null
   phone: string | null
   zip: string | null
+  /** Set when a PO-box / business ZIP was routed as its parent ZIP. */
+  routed_zip?: string | null
   vehicle: string | null
   mileage: string | null
   estimate: number | null
@@ -60,6 +62,8 @@ export type Delivery = {
   customer: string | null
   vehicle: string | null
   zip: string | null
+  /** Set when a PO-box / business ZIP was routed as its parent ZIP. */
+  routed_zip?: string | null
   distance_miles: number | null
   recipient: string
   recipient_kind: 'crm_ingest' | 'backup' | 'test'

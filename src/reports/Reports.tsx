@@ -268,9 +268,9 @@ export default function Reports({ token, onUnauthorized, initialScope = '' }: Pr
                   onClick={() =>
                     downloadCsv(
                       'unassigned-leads.csv',
-                      ['Lead', 'Date', 'Reason', 'Customer', 'Email', 'Phone', 'ZIP', 'Vehicle', 'Estimate', 'ZIP owner', 'Miles', 'Why not'],
+                      ['Lead', 'Date', 'Reason', 'Customer', 'Email', 'Phone', 'ZIP', 'Routed as', 'Vehicle', 'Estimate', 'ZIP owner', 'Miles', 'Why not'],
                       (unassigned.data?.leads ?? []).map((l) => [
-                        l.lead_id, l.created_at, reasonLabel(l.reason), l.customer, l.email, l.phone, l.zip, l.vehicle, l.estimate,
+                        l.lead_id, l.created_at, reasonLabel(l.reason), l.customer, l.email, l.phone, l.zip, l.routed_zip ?? null, l.vehicle, l.estimate,
                         l.nearest_dealer?.slug ?? null, l.nearest_dealer?.distance_miles ?? null, l.nearest_dealer?.why_not ?? null,
                       ]),
                     )
@@ -307,7 +307,7 @@ export default function Reports({ token, onUnauthorized, initialScope = '' }: Pr
                         <div className="muted">{l.phone || l.email || '—'}</div>
                       </td>
                       <td>{l.vehicle || '—'}</td>
-                      <td>{l.zip || '—'}</td>
+                      <td>{l.zip || '—'}{l.routed_zip ? <div className="muted" title="PO-box or business ZIP, routed as the ZIP it sits in">as {l.routed_zip}</div> : null}</td>
                       <td>{money(l.estimate)}</td>
                       <td>
                         {l.nearest_dealer ? (
@@ -358,9 +358,9 @@ export default function Reports({ token, onUnauthorized, initialScope = '' }: Pr
                   onClick={() =>
                     downloadCsv(
                       `deliveries${dealer ? `-${dealer.replace('group:', '')}` : ''}.csv`,
-                      ['Sent', 'Lead', 'Dealer', 'Customer', 'Vehicle', 'ZIP', 'Miles', 'Address', 'Kind', 'Status', 'Delivery', 'Error', 'Message id'],
+                      ['Sent', 'Lead', 'Dealer', 'Customer', 'Vehicle', 'ZIP', 'Routed as', 'Miles', 'Address', 'Kind', 'Status', 'Delivery', 'Error', 'Message id'],
                       (deliveries.data?.deliveries ?? []).map((d) => [
-                        d.sent_at, d.lead_id, d.dealer, d.customer, d.vehicle, d.zip, d.distance_miles, d.recipient, d.recipient_kind,
+                        d.sent_at, d.lead_id, d.dealer, d.customer, d.vehicle, d.zip, d.routed_zip ?? null, d.distance_miles, d.recipient, d.recipient_kind,
                         d.status, d.delivery_status, d.error, d.message_id,
                       ]),
                     )
@@ -394,7 +394,7 @@ export default function Reports({ token, onUnauthorized, initialScope = '' }: Pr
                         <div className="muted">{d.vehicle || '—'}</div>
                       </td>
                       <td>
-                        <div>{d.zip || '—'}</div>
+                        <div>{d.zip || '—'}{d.routed_zip ? <span className="muted" title="PO-box or business ZIP, routed as the ZIP it sits in"> (as {d.routed_zip})</span> : null}</div>
                         {d.distance_miles != null ? <div className="muted">{d.distance_miles} mi</div> : null}
                       </td>
                       <td>
