@@ -224,6 +224,18 @@ function DealerPage({
       options: ['appraisal', 'offer', 'quote', 'asking', 'msrp', 'invoice', 'call'].map((v) => ({ value: v, label: v })),
       help: 'Which ADF price type the CRM reads into its value field.',
     },
+    {
+      key: 'customer_note',
+      label: 'Summary note on the deal',
+      type: 'checkbox',
+      help: 'Also puts the vehicle, mileage, estimate and condition in the customer comments. DriveCentric shows it as a note on the deal.',
+    },
+    {
+      key: 'timeline_note',
+      label: 'Timeline note',
+      type: 'text',
+      help: 'For example "Customer is looking to sell their vehicle". DriveCentric shows it as the purchasing timeline. Empty leaves it out.',
+    },
   ]
 
   return (
