@@ -14,6 +14,9 @@ import { loadShapes, type ZipFeature } from './zipShapes'
 
 type Owner = { slug: string; name: string; status: string }
 type TerritoryRow = { zip: string; has_location: boolean; owners: Owner[] }
+type ZipInfo = { zip: string; lat: number | null; lng: number | null; parent: { zip: string; lat: number | null; lng: number | null } | null }
+// A ZIP looked up with "Find a ZIP": the one marked on the map, and what to say about it.
+type Found = { zip: string; shown: string; text: string }
 type SaveResult = { changed: boolean; added: string[]; removed: string[]; shared: Array<{ zip: string; with: string[] }>; zip_count: number }
 
 type Props = {
@@ -34,8 +37,14 @@ const COLOR = {
   unclaimed: '#9aa9a1',
   added: '#0c4a36',
   removed: '#c71222',
+  found: '#1d2a6b',
 }
 
+const milesBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const r = Math.PI / 180
+  const h = Math.sin(((b.lat - a.lat) * r) / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(((b.lng - a.lng) * r) / 2) ** 2
+  return 2 * 3958.8 * Math.asin(Math.sqrt(h))
+}
 const sameSet = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every((x) => b.has(x))
 const parseZips = (text: string) => text.split(/[\s,;]+/).map((z) => z.trim()).filter(Boolean)
 
@@ -51,10 +60,13 @@ export default function TerritoryEditor({ slug, dealerName, territory, home, tok
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [findText, setFindText] = useState('')
+  const [found, setFound] = useState<Found | null>(null)
 
   const el = useRef<HTMLDivElement | null>(null)
   const map = useRef<L.Map | null>(null)
   const zipLayer = useRef<L.GeoJSON | null>(null)
+  const findLayer = useRef<L.LayerGroup | null>(null)
 
   // Expand: a taller map. Leaflet measures its box once, so tell it the box changed.
   const [big, setBig] = useState(false)
@@ -62,9 +74,9 @@ export default function TerritoryEditor({ slug, dealerName, territory, home, tok
     map.current?.invalidateSize()
   }, [big])
   // The latest state, for Leaflet's event handlers (created once).
-  const live = useRef({ draft, others, editing })
+  const live = useRef({ draft, others, editing, found })
   useEffect(() => {
-    live.current = { draft, others, editing }
+    live.current = { draft, others, editing, found }
   })
 
   // A fresh territory from the server (after a save) resets the draft.
@@ -105,6 +117,7 @@ export default function TerritoryEditor({ slug, dealerName, territory, home, tok
     }
     if (mine && !wasMine) Object.assign(style, { color: COLOR.added, weight: 2.5, dashArray: '5 4' })
     if (!mine && wasMine) Object.assign(style, { color: COLOR.removed, weight: 2.5, dashArray: '5 4', fillOpacity: 0.05 })
+    if (live.current.found?.shown === zip) Object.assign(style, { color: COLOR.found, weight: 3.5, opacity: 1, dashArray: undefined })
     return style
   }, [original])
 
@@ -132,6 +145,8 @@ export default function TerritoryEditor({ slug, dealerName, territory, home, tok
         .bindTooltip(dealerName, { permanent: true, direction: 'right', offset: [10, 0], className: 'map-label' })
         .addTo(m)
     }
+
+    findLayer.current = L.layerGroup().addTo(m)
 
     let cancelled = false
     loadShapes()
@@ -167,17 +182,86 @@ export default function TerritoryEditor({ slug, dealerName, territory, home, tok
       m.remove()
       map.current = null
       zipLayer.current = null
+      findLayer.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- built once; later changes restyle below
   }, [])
 
-  // Repaint when the draft or the other dealers' territories change.
+  // Repaint when the draft, the other dealers' territories or the found ZIP change.
   useEffect(() => {
     zipLayer.current?.eachLayer((l) => {
       const zip = ((l as L.GeoJSON).feature as ZipFeature).properties.zip
       ;(l as L.Path).setStyle(styleFor(zip))
+      if (found?.shown === zip) (l as L.Path).bringToFront()
     })
-  }, [draft, others, styleFor])
+  }, [draft, others, found, styleFor])
+
+  // Find a ZIP: outline it, pin it, frame it next to the store, and say whose it is. A
+  // PO-box ZIP has no area of its own, so its parent (the ZIP it routes as) is shown.
+  const find = async (raw: string) => {
+    const zip = raw.trim()
+    if (!/^\d{5}$/.test(zip)) {
+      setFound({ zip, shown: '', text: `${zip || 'That'} isn’t a 5-digit ZIP.` })
+      return
+    }
+    let info: ZipInfo
+    try {
+      info = await apiGet<ZipInfo>(`/dealers/zip/${zip}`, token)
+    } catch (e) {
+      if (e instanceof UnauthorizedError) onError(e)
+      setFound({ zip, shown: '', text: e instanceof Error ? e.message : 'Could not look that ZIP up.' })
+      return
+    }
+    const { draft: d, others: o } = live.current
+    const ownersOf = (z: string) => [...(d.has(z) ? [dealerName] : []), ...(o.get(z) ?? []).map((x) => x.name)]
+    // Routing: a dealer owning the ZIP itself wins; otherwise it routes as its parent.
+    const viaParent = info.parent && !ownersOf(zip).length ? info.parent : null
+    const routed = viaParent ? viaParent.zip : zip
+    const at = viaParent ? viaParent : info
+    const point = at.lat != null && at.lng != null ? { lat: at.lat, lng: at.lng } : null
+
+    let shape: L.Path | null = null
+    zipLayer.current?.eachLayer((l) => {
+      if (((l as L.GeoJSON).feature as ZipFeature).properties.zip === routed) shape = l as L.Path
+    })
+
+    const owners = ownersOf(routed)
+    const mine = d.has(routed)
+    const whose = !owners.length
+      ? 'Nobody owns it, so its leads go unassigned.'
+      : owners.length > 1
+        ? `Shared by ${owners.join(' and ')}; leads rotate.`
+        : mine
+          ? `It’s in ${dealerName}’s territory.`
+          : `It belongs to ${owners[0]}, not ${dealerName}.`
+    const parts = [
+      viaParent ? `${zip} is a PO-box ZIP with no area of its own; it routes as ${routed}.` : `${zip}:`,
+      whose,
+      point && home ? `${Math.round(milesBetween(home, point))} mi from the store.` : '',
+      !point ? 'We have no location for this ZIP, so it can’t be shown.' : !shape ? 'It’s outside Texas, so there’s no outline, only a pin.' : '',
+    ]
+    setFound({ zip, shown: routed, text: parts.filter(Boolean).join(' ') })
+
+    const m = map.current
+    const layer = findLayer.current
+    if (!m || !layer) return
+    layer.clearLayers()
+    const pin = point ? L.latLng(point.lat, point.lng) : shape ? (shape as unknown as L.Polygon).getBounds().getCenter() : null
+    if (!pin) return
+    L.circleMarker(pin, { radius: 8, color: '#ffffff', weight: 3, fillColor: COLOR.found, fillOpacity: 1 })
+      .bindTooltip(routed === zip ? zip : `${zip} → ${routed}`, { permanent: true, direction: 'top', offset: [0, -10], className: 'map-label' })
+      .addTo(layer)
+    const frame = L.latLngBounds([pin])
+    if (shape) frame.extend((shape as unknown as L.Polygon).getBounds())
+    if (home) frame.extend([home.lat, home.lng])
+    m.flyToBounds(frame, { padding: [50, 50], maxZoom: 12, duration: 0.6 })
+  }
+
+  const clearFound = () => {
+    setFound(null)
+    setFindText('')
+    findLayer.current?.clearLayers()
+  }
 
   const added = [...draft].filter((z) => !original.has(z)).sort()
   const removed = [...original].filter((z) => !draft.has(z)).sort()
@@ -290,6 +374,29 @@ export default function TerritoryEditor({ slug, dealerName, territory, home, tok
         </div>
       ) : null}
 
+      <form
+        className="inline-form territory-find"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void find(findText)
+        }}
+      >
+        <label>
+          <span>Find a ZIP on the map</span>
+          <input type="text" inputMode="numeric" maxLength={5} value={findText} onChange={(e) => setFindText(e.target.value)} placeholder="e.g. 78237" />
+        </label>
+        <button type="submit" className="btn btn-secondary" disabled={!findText.trim()}>
+          Show
+        </button>
+        {found ? (
+          <button type="button" className="btn btn-quiet" onClick={clearFound}>
+            Clear
+          </button>
+        ) : null}
+      </form>
+      {found ? <p className="territory-found" role="status">{found.text}</p> : null}
+
       <div className={`dealer-map territory-map${big ? ' map-big' : ''}`}>
         <div ref={el} className="map-fill" role="region" aria-label={`Map of ${dealerName}’s ZIP codes`} />
       </div>
@@ -301,9 +408,11 @@ export default function TerritoryEditor({ slug, dealerName, territory, home, tok
             const noShape = shapeZips !== null && !shapeZips.has(z)
             const shared = others.get(z)
             return (
-              <span key={z} className={`zip-chip${isNew ? ' zip-chip-new' : ''}${shared ? ' zip-chip-shared' : ''}`} title={shared ? `Shared with ${shared.map((s) => s.name).join(', ')}` : undefined}>
-                {z}
-                {noShape ? <span className="muted"> · not on map</span> : null}
+              <span key={z} className={`zip-chip${isNew ? ' zip-chip-new' : ''}${shared ? ' zip-chip-shared' : ''}${found?.zip === z ? ' zip-chip-found' : ''}`} title={shared ? `Shared with ${shared.map((s) => s.name).join(', ')}` : undefined}>
+                <button type="button" className="zip-chip-find" aria-label={`Show ${z} on the map`} onClick={() => { setFindText(z); void find(z) }}>
+                  {z}
+                  {noShape ? <span className="muted"> · not on map</span> : null}
+                </button>
                 {editing ? (
                   <button type="button" className="zip-chip-x" aria-label={`Remove ${z}`} onClick={() => toggle(z)}>
                     ×

@@ -1514,6 +1514,44 @@ tr.total-row td {
   border-color: var(--forest);
 }
 
+/* The ZIP number is a button: click it to find that ZIP on the map. */
+.zip-chip-find {
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.zip-chip-find:hover {
+  text-decoration: underline;
+}
+
+.zip-chip-found {
+  border-color: #1d2a6b;
+  box-shadow: 0 0 0 2px #1d2a6b;
+}
+
+/* Find a ZIP: one short row above the map, its answer just below. */
+.territory-find {
+  padding-top: 0;
+  border-top: none;
+  flex-wrap: nowrap;
+}
+
+.territory-find label {
+  flex: 0 1 220px;
+}
+
+.territory-found {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid #1d2a6b;
+  background: var(--mint);
+  color: var(--ink, inherit);
+}
+
 .zip-chip-x {
   border: none;
   background: none;
