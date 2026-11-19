@@ -1585,3 +1585,83 @@ tr.total-row td {
   padding-top: 0;
   border-top: none;
 }
+
+/* ------------------------------------------------------- dialogs (Assign lead) */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000; /* above Leaflet's panes and the sidebar */
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(12, 74, 54, 0.35);
+}
+
+.dialog {
+  width: min(100%, 440px);
+  padding: 24px;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 40px rgba(12, 74, 54, 0.18);
+  display: grid;
+  gap: 14px;
+}
+
+.dialog-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--forest);
+}
+
+.dialog-lead {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.dialog-field {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dialog-field select {
+  width: 100%;
+  font-weight: 400;
+}
+
+.dialog-ok {
+  padding: 10px 12px;
+  border-radius: var(--radius-s);
+  background: var(--mint);
+  color: var(--forest);
+  font-size: 14px;
+}
+
+.dialog-recipients {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.lead-assign-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.lead-card-assign {
+  margin-top: 12px;
+  width: 100%;
+}

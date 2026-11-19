@@ -8,6 +8,8 @@ import Dealers from './dealers/Dealers'
 import Onboarding from './onboarding/Onboarding'
 import Groups from './groups/Groups'
 import Settings from './settings/Settings'
+import AssignLeadDialog from './leads/AssignLeadDialog'
+import type { AssignedLead } from './leads/AssignLeadDialog'
 
 type Lead = {
   id: number
@@ -274,6 +276,16 @@ function App() {
   const [toDate, setToDate] = useState('')
   const [mileageMin, setMileageMin] = useState('')
   const [mileageMax, setMileageMax] = useState('')
+
+  // The lead whose Assign popup is open (unassigned leads only; admins only).
+  const [assigning, setAssigning] = useState<Lead | null>(null)
+  const canAssign = (lead: Lead) => role === 'admin' && !lead.dealer_slug && lead.routing_outcome === 'unassigned'
+  // Shows the new dealer in the table straight away, without reloading every lead.
+  const markAssigned = useCallback(({ leadId, dealerSlug, dealerName }: AssignedLead) => {
+    setLeads((all) => all.map((l) => (l.id === leadId
+      ? { ...l, dealer_slug: dealerSlug, dealer_name: dealerName, routing_outcome: 'manual', routing_reason: null }
+      : l)))
+  }, [])
 
   const [sortKey, setSortKey] = useState<SortKey>('created_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
@@ -1197,6 +1209,7 @@ function App() {
                   </th>
                   <th>Adj Whole Avg</th>
                   <th>Contact</th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -1220,13 +1233,20 @@ function App() {
                         <div>{normalize(lead.email_address) || '-'}</div>
                         <div>{normalize(lead.phone_number) || '-'}</div>
                       </td>
+                      <td className="lead-assign-cell">
+                        {canAssign(lead) ? (
+                          <button type="button" className="btn btn-secondary" onClick={() => setAssigning(lead)}>
+                            Assign lead
+                          </button>
+                        ) : null}
+                      </td>
                     </tr>
                   )
                 })}
 
                 {!isLoading && filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="empty-row">
+                    <td colSpan={11} className="empty-row">
                       No leads match the current filters.
                     </td>
                   </tr>
@@ -1277,6 +1297,11 @@ function App() {
                       <strong>{normalize(lead.phone_number) || '-'}</strong>
                     </div>
                   </div>
+                  {canAssign(lead) ? (
+                    <button type="button" className="btn btn-secondary lead-card-assign" onClick={() => setAssigning(lead)}>
+                      Assign lead
+                    </button>
+                  ) : null}
                 </article>
               )
             })}
@@ -1286,6 +1311,19 @@ function App() {
             ) : null}
           </div>
         </section>
+        {assigning && token ? (
+          <AssignLeadDialog
+            token={token}
+            lead={{
+              id: assigning.id,
+              name: `${normalize(assigning.first_name)} ${normalize(assigning.last_name)}`.trim(),
+              vehicle: `${normalize(assigning.model_year)} ${normalize(assigning.make)} ${normalize(assigning.model)}`.trim(),
+              zip: normalize(assigning.zip_code),
+            }}
+            onClose={() => setAssigning(null)}
+            onAssigned={markAssigned}
+          />
+        ) : null}
       </div>
       )}
       </main>
